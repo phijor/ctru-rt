@@ -50,3 +50,12 @@ unsafe extern "C" fn _ctru_rt_start() {
 
     main();
 }
+
+#[doc(hidden)]
+/// Please the ARM ABI gods.
+///
+/// Until we implement stack unwinding, this shouldn't be necessary.  But trying to use the alloc
+/// crate requires this symbol and the linker gets angry if it can't find it.  So some time in the
+/// future we should figure out how and under which circumstances we can get rid of it.
+#[no_mangle]
+pub fn __aeabi_unwind_cpp_pr0() {}
