@@ -1,6 +1,6 @@
 {
   "data-layout": "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64",
-  "llvm-target": "arm-none-eabihf",
+  "llvm-target": "armv6k-none-eabihf",
 
   "linker": "arm-none-eabi-ld",
   "linker-flavor": "ld",
@@ -17,8 +17,15 @@
   "os": "horizon",
   "cpu": "mpcore",
 
+  "atomic_cas": false,
+  "max_atomic_width": 32,
   "features": ["+vfp2", "hard-float"],
+
   "relocation-model": "static",
+  "panic-strategy": "abort",
+  "executables": true,
+  "exe-suffix": ".elf",
+
   "pre-link-args-crt": {
     "ld": [
       "ctru-rt.o"
@@ -26,20 +33,14 @@
   },
   "pre-link-args": {
     "ld": [
-      "-Tlink.x"
+      "-Tlink.x",
+      "--use-blx"
     ],
     "gcc": [
-      "--use-blx",
       "-mfloat-abi=hard",
       "-march=armv6k",
       "-mfpu=vfp",
-      "-mtp=soft",
-      "-z", "muldefs",
-      "-lgcc",
-      "-lsysbase",
-      "-lc"
+      "-mtp=soft"
     ]
-  },
-  "executables": true,
-  "exe-suffix": ".elf"
+  }
 }

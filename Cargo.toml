@@ -4,9 +4,22 @@ version = "0.1.0"
 authors = ["Philipp Joram <mail@phijor.me>"]
 edition = "2018"
 
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [package.metadata.cargo-xbuild]
 sysroot_path = "target/sysroot"
 
 [dependencies]
 r0 = "0.2"
+linked_list_allocator = { version = "0.6", optional = true }
+
+[features]
+default = [
+    "heap"
+]
+heap = ["linked_list_allocator"]

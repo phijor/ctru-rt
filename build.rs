@@ -48,12 +48,16 @@ impl Assemble {
 
     fn archive(&self) -> Result<ExitStatus> {
         println!("cargo:rustc-link-lib={}", self.libname);
-        Command::new("arm-none-eabi-ar")
-            .arg("crs")
+
+        let mut cmd = Command::new("arm-none-eabi-ar");
+        cmd.arg("crs")
             .arg(self.archive_file())
             .arg(self.o_file())
-            .stdout(Stdio::null())
-            .status()
+            .stdout(Stdio::null());
+
+        eprintln!("Running archiver: {:?}", &cmd);
+
+        cmd.status()
     }
 }
 

@@ -1,12 +1,32 @@
 #![no_std]
-#![feature(lang_items)]
 #![feature(try_trait)]
+#![cfg_attr(feature = "heap", feature(alloc_error_handler))]
+
+pub mod debug;
+pub mod env;
+pub mod os;
+pub mod result;
+pub mod svc;
+
+#[cfg(feature = "heap")]
+pub mod heap;
+
+#[cfg(feature = "heap")]
+extern crate alloc;
 
 extern crate core;
 
-pub mod env;
-pub mod result;
-pub mod svc;
+#[macro_export]
+macro_rules! entry {
+    ($entry: path) => {
+        #[export_name = "main"]
+        pub unsafe fn __main() {
+            let f: fn() = $entry;
+
+            f()
+        }
+    };
+}
 
 #[no_mangle]
 unsafe extern "C" fn _ctru_rt_start() {
@@ -21,17 +41,12 @@ unsafe extern "C" fn _ctru_rt_start() {
     r0::zero_bss(&mut __bss_start__, &mut __bss_end__);
     r0::run_init_array(&__init_array_start, &__init_array_end);
 
+    #[cfg(feature = "heap")]
+    crate::heap::init().expect("Failed to initialize heap");
+
     extern "Rust" {
-        fn start();
+        fn main();
     }
 
-    start();
-}
-
-#[lang = "eh_personality"]
-extern "C" fn eh_personality() {}
-
-#[no_mangle]
-unsafe extern "C" fn __aeabi_unwind_cpp_pr0() {
-    loop {}
+    main();
 }

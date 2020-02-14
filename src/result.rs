@@ -1,8 +1,10 @@
+use core::fmt::Debug;
 use core::ops::Try;
 
 pub type Result<T> = core::result::Result<T, ResultCode>;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(transparent)]
 pub struct ResultCode(u32);
 
 impl Try for ResultCode {

@@ -15,8 +15,6 @@
 @---------------------------------------------------------------------------------
 	.section ".crt0","ax"
 	.global _start, __service_ptr, __apt_appid, __heap_size, __linear_heap_size, __system_arglist, __system_runflags
-
-    @ .global _ctru_rt_start
 @---------------------------------------------------------------------------------
 	.align 2
 	.arm
@@ -43,6 +41,5 @@ startup:
 
 	@ Jump to user code
 	ldr r3, =_ctru_rt_start
-	@ ldr lr, =exit
-	mov lr, r4
+	ldr lr, =svcExitProcess
 	bx  r3

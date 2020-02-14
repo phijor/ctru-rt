@@ -1,9 +1,4 @@
 # vim: set filetype=cfg:
 
 [build]
-target = "arm-nintendo-ctr-elf"
-
-[target.arm-nintendo-ctr-elf]
-rustflags = [
-  "-C", "link-arg=-Tlink.x",
-]
+target = "armv6k-nintendo-horizon_ctr-elf"
