@@ -1,18 +1,23 @@
 use crate::result::ResultCode;
 
-pub fn output_debug_string(message: &str) {
-    extern "C" {
-        fn svcOutputDebugString(message: *const u8, length: u32);
-    }
+extern "C" {
+    fn svcOutputDebugString(message: *const u8, length: usize);
+    fn svcExitProcess();
+    fn svcControlMemory(
+        dest: *mut usize,
+        addr0: usize,
+        addr1: usize,
+        size: usize,
+        op: u32,
+        permission: u32,
+    ) -> ResultCode;
+}
 
-    unsafe { svcOutputDebugString(message.as_ptr(), message.len() as u32) }
+pub fn output_debug_string(message: &str) {
+    unsafe { svcOutputDebugString(message.as_ptr(), message.len()) }
 }
 
 pub fn exit_process() -> ! {
-    extern "C" {
-        fn svcExitProcess();
-    }
-
     unsafe { svcExitProcess() }
 
     loop {}
@@ -83,17 +88,6 @@ pub unsafe fn control_memory(
     op: mem::MemoryOperation,
     permission: mem::MemoryPermission,
 ) -> Result<usize, ResultCode> {
-    extern "C" {
-        fn svcControlMemory(
-            dest: *mut usize,
-            addr0: usize,
-            addr1: usize,
-            size: usize,
-            op: u32,
-            permission: u32,
-        ) -> ResultCode;
-    }
-
     let mut dest: usize = 0;
     svcControlMemory(
         &mut dest as *mut usize,
