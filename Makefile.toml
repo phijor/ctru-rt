@@ -3,11 +3,11 @@ disabled = true
 
 [tasks.build]
 command = "cargo"
-args = ["xbuild", "--target", "armv6k-nintendo-horizon_ctr-elf.json", "-vv", "${@}"]
+args = ["xbuild", "--target", "armv6k-nintendo-horizon_ctr-elf.json", "${@}"]
 
 [tasks.build-examples]
 command = "cargo"
-args = ["xbuild", "--target", "armv6k-nintendo-horizon_ctr-elf.json", "-vv", "--examples", "${@}"]
+args = ["xbuild", "--target", "armv6k-nintendo-horizon_ctr-elf.json", "--examples", "${@}"]
 
 [tasks.examples]
 dependencies = ["build-examples"]
