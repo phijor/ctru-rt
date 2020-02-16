@@ -23,7 +23,7 @@ impl Try for ResultCode {
         v
     }
 
-    fn from_ok(_: ()) -> Self {
+    fn from_ok(_: Self::Ok) -> Self {
         Self::succeeded()
     }
 }
