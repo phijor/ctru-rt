@@ -14,48 +14,29 @@ pub fn system_runflags() -> u32 {
     unsafe { __system_runflags }
 }
 
-pub struct SystemArglist {
+pub struct SystemArgList {
     length: usize,
     arguments: *const u8,
 }
 
-pub struct SystemArglistIter {
-    remaining: usize,
-    arguments: *const u8,
-}
-
-impl core::iter::IntoIterator for SystemArglist {
-    type IntoIter = SystemArglistIter;
-    type Item = <SystemArglistIter as core::iter::Iterator>::Item;
-
-    fn into_iter(self) -> Self::IntoIter {
-        SystemArglistIter {
-            remaining: self.length,
-            arguments: self.arguments,
-        }
-    }
-}
-
-impl core::iter::Iterator for SystemArglistIter {
+impl core::iter::Iterator for SystemArgList {
     type Item = &'static [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.remaining {
+        match self.length {
             0 => None,
             _ => {
-                let arg_len: usize = unsafe {
+                let slice = unsafe {
                     let mut i = 0;
                     while self.arguments.offset(i).read() != b'\0' {
                         i += 1
                     }
 
-                    self.remaining -= 1;
-                    self.arguments = self.arguments.offset(i);
+                    self.arguments = self.arguments.offset(i + 1);
+                    self.length -= 1;
 
-                    i as usize
+                    core::slice::from_raw_parts(self.arguments, i as usize)
                 };
-
-                let slice = unsafe { core::slice::from_raw_parts(self.arguments, arg_len) };
 
                 Some(slice)
             }
@@ -63,13 +44,13 @@ impl core::iter::Iterator for SystemArglistIter {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
+        (self.length, Some(self.length))
     }
 }
 
-impl core::iter::ExactSizeIterator for SystemArglistIter {}
+impl core::iter::ExactSizeIterator for SystemArgList {}
 
-pub fn system_arglist() -> SystemArglist {
+pub fn system_arglist() -> SystemArgList {
     extern "C" {
         static __system_arglist: *const u8;
     }
@@ -77,7 +58,7 @@ pub fn system_arglist() -> SystemArglist {
     let length_ptr = unsafe { __system_arglist } as *const u32;
     let (length, arguments) = unsafe { (*length_ptr as usize, length_ptr.offset(1) as *const u8) };
 
-    SystemArglist { length, arguments }
+    SystemArgList { length, arguments }
 }
 
 pub fn heap_size() -> usize {
