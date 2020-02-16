@@ -39,3 +39,7 @@ pub(crate) fn init() -> Result<()> {
 
     Ok(())
 }
+
+pub(crate) fn initialized() -> bool {
+    ALLOCATOR.lock().bottom() != 0
+}

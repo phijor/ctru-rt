@@ -1,21 +1,19 @@
 use crate::svc::output_debug_string;
 
-#[cfg(not(feature = "heap"))]
-use core::fmt;
-
-#[cfg(feature = "heap")]
-use alloc::fmt;
-
 #[derive(Default)]
 pub struct SvcDebugLog;
 
-impl fmt::Write for SvcDebugLog {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
+impl core::fmt::Write for SvcDebugLog {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
         Ok(output_debug_string(s))
     }
 
     #[cfg(feature = "heap")]
-    fn write_fmt(&mut self, args: fmt::Arguments) -> fmt::Result {
-        Ok(output_debug_string(&fmt::format(args)))
+    fn write_fmt(&mut self, args: core::fmt::Arguments) -> core::fmt::Result {
+        if crate::heap::initialized() {
+            Ok(output_debug_string(&alloc::fmt::format(args)))
+        } else {
+            core::fmt::write(self, args)
+        }
     }
 }
