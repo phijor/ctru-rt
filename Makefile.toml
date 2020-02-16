@@ -1,16 +1,17 @@
 [env]
 XTARGET = "armv6k-nintendo-horizon_ctr-elf"
+XBUILD_FLAGS = "-Zbuild-std=core,alloc"
 
 [tasks.test]
 disabled = true
 
 [tasks.build]
 command = "cargo"
-args = ["xbuild", "--target", "${XTARGET}.json", "${@}"]
+args = ["build", "${XBUILD_FLAGS}", "--target", "${XTARGET}.json", "${@}"]
 
 [tasks.build-examples]
 command = "cargo"
-args = ["xbuild", "--target", "${XTARGET}.json", "--examples", "${@}"]
+args = ["build", "${XBUILD_FLAGS}", "--target", "${XTARGET}.json", "--examples", "${@}"]
 
 [tasks.examples]
 dependencies = ["build-examples"]
