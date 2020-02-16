@@ -4,7 +4,7 @@
 
 use core::{fmt::Write, panic::PanicInfo};
 
-use ctru_rt::{debug::SvcDebugLog, entry, env};
+use ctru_rt::{debug::SvcDebugLog, entry, env, os};
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
@@ -19,6 +19,12 @@ entry!(main);
 fn main() {
     let mut log = SvcDebugLog::default();
 
-    writeln!(log, "Hello, World!, app_id is {:#0x}", env::app_id())
-        .expect("Failed to write Hello World");
+    let app_id = env::app_id();
+    let app_mem_used = os::MemoryRegion::Application.used();
+    writeln!(
+        log,
+        "Hello, World!, app_id is {:#0x}, app mem used: {:#0x}",
+        app_id, app_mem_used
+    )
+    .expect("Failed to write Hello World");
 }
