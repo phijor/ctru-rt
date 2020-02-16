@@ -1,4 +1,4 @@
 # vim: set filetype=cfg:
 
 [build]
-target = "armv6k-nintendo-horizon_ctr-elf"
+target = "armv6k-nintendo-horizon_ctr-elf.json"

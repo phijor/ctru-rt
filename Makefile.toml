@@ -7,11 +7,11 @@ disabled = true
 
 [tasks.build]
 command = "cargo"
-args = ["build", "${XBUILD_FLAGS}", "--target", "${XTARGET}.json", "${@}"]
+args = ["build", "${XBUILD_FLAGS}", "${@}"]
 
 [tasks.build-examples]
 command = "cargo"
-args = ["build", "${XBUILD_FLAGS}", "--target", "${XTARGET}.json", "--examples", "${@}"]
+args = ["build", "${XBUILD_FLAGS}", "--examples", "${@}"]
 
 [tasks.examples]
 dependencies = ["build-examples"]
