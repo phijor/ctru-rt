@@ -1,20 +1,23 @@
+[env]
+XTARGET = "armv6k-nintendo-horizon_ctr-elf"
+
 [tasks.test]
 disabled = true
 
 [tasks.build]
 command = "cargo"
-args = ["xbuild", "--target", "armv6k-nintendo-horizon_ctr-elf.json", "${@}"]
+args = ["xbuild", "--target", "${XTARGET}.json", "${@}"]
 
 [tasks.build-examples]
 command = "cargo"
-args = ["xbuild", "--target", "armv6k-nintendo-horizon_ctr-elf.json", "--examples", "${@}"]
+args = ["xbuild", "--target", "${XTARGET}.json", "--examples", "${@}"]
 
 [tasks.examples]
 dependencies = ["build-examples"]
 command = "3dsxtool"
 args = [
-	"target/armv6k-nintendo-horizon_ctr-elf/debug/examples/hello_world.elf",
-	"target/armv6k-nintendo-horizon_ctr-elf/debug/examples/hello_world.3dsx",
+	"target/${XTARGET}/debug/examples/hello_world.elf",
+	"target/${XTARGET}/debug/examples/hello_world.3dsx",
 ]
 
 [tasks.default]
