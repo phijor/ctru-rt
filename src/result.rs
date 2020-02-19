@@ -5,6 +5,7 @@ pub type Result<T> = core::result::Result<T, ResultCode>;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(transparent)]
+#[must_use = "result codes must be checked for failure"]
 pub struct ResultCode(u32);
 
 impl Try for ResultCode {
