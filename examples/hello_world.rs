@@ -20,7 +20,9 @@ fn main() {
     let mut log = SvcDebugLog::default();
 
     let app_id = env::app_id();
-    let app_mem_used = os::MemoryRegion::Application.used();
+    let app_mem_used = os::MemoryRegion::Application
+        .used()
+        .expect("Failed to get memory information");
     writeln!(
         log,
         "Hello, World!, app_id is {:#0x}, app mem used: {:#0x}",

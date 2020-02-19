@@ -1,4 +1,4 @@
-use crate::svc;
+use crate::{result::Result, svc};
 
 use volatile::ReadOnly;
 
@@ -28,8 +28,8 @@ impl MemoryRegion {
         unsafe { cfgmem_ptr.read() }.read()
     }
 
-    pub fn used(&self) -> u64 {
+    pub fn used(&self) -> Result<u64> {
         const MEM_USED: u32 = 0;
-        unsafe { svc::get_system_info(MEM_USED, *self as i32) as u64 }
+        unsafe { svc::get_system_info(MEM_USED, *self as i32).map(|val| val as u64) }
     }
 }

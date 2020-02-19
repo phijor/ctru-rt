@@ -11,7 +11,7 @@ extern "C" {
         op: u32,
         permission: u32,
     ) -> ResultCode;
-    fn svcGetSystemInfo(out: *mut i64, sysinfo_type: u32, param: i32);
+    fn svcGetSystemInfo(out: *mut i64, sysinfo_type: u32, param: i32) -> ResultCode;
 }
 
 pub fn output_debug_string(message: &str) {
@@ -102,8 +102,8 @@ pub unsafe fn control_memory(
     Ok(dest)
 }
 
-pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> i64 {
+pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64, ResultCode> {
     let mut out: i64 = 0;
-    svcGetSystemInfo(&mut out as *mut i64, sysinfo_type, param);
-    out
+    svcGetSystemInfo(&mut out as *mut i64, sysinfo_type, param)?;
+    Ok(out)
 }
