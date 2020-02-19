@@ -2,3 +2,6 @@
 
 [build]
 target = "armv6k-nintendo-horizon_ctr-elf.json"
+
+[target.armv6k-nintendo-horizon_ctr-elf]
+runner = "citra-qt"
