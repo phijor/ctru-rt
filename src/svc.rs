@@ -1,5 +1,7 @@
 use crate::result::ResultCode;
 
+use core::{convert::TryInto, time::Duration};
+
 extern "C" {
     fn svcOutputDebugString(message: *const u8, length: usize);
     fn svcExitProcess();
@@ -12,6 +14,7 @@ extern "C" {
         permission: u32,
     ) -> ResultCode;
     fn svcGetSystemInfo(out: *mut i64, sysinfo_type: u32, param: i32) -> ResultCode;
+    fn svcSleepThread(ns: u64) -> ResultCode;
 }
 
 pub fn output_debug_string(message: &str) {
@@ -106,4 +109,9 @@ pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64, Resu
     let mut out: i64 = 0;
     svcGetSystemInfo(&mut out as *mut i64, sysinfo_type, param)?;
     Ok(out)
+}
+
+pub fn sleep_thread(duration: Duration) -> ResultCode {
+    let ns: u64 = duration.as_nanos().try_into().unwrap_or(u64::max_value());
+    unsafe { svcSleepThread(ns) }
 }
