@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(start)]
 
+use core::time::Duration;
 use core::{fmt::Write, panic::PanicInfo};
 
 use ctru_rt::{debug::SvcDebugLog, entry, env, os};
@@ -29,4 +30,8 @@ fn main() {
         app_id, app_mem_used
     )
     .expect("Failed to write Hello World");
+
+    ctru_rt::svc::sleep_thread(Duration::from_secs(2));
+
+    writeln!(log, "Bye-bye!");
 }
