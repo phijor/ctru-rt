@@ -1,37 +1,66 @@
-use core::fmt::Debug;
-use core::ops::Try;
+use core::{fmt, num::NonZeroU32, ops::Try};
 
-pub type Result<T> = core::result::Result<T, ResultCode>;
+pub type Result<T> = core::result::Result<T, ErrorCode>;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 #[must_use = "result codes must be checked for failure"]
 pub struct ResultCode(u32);
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[repr(transparent)]
+#[must_use = "error codes indicate failure that must be dealt with"]
+pub struct ErrorCode(NonZeroU32);
+
+impl ErrorCode {
+    pub unsafe fn new_unchecked(ec: u32) -> Self {
+        Self(NonZeroU32::new_unchecked(ec))
+    }
+}
+
 impl Try for ResultCode {
     type Ok = ();
-    type Error = Self;
+    type Error = ErrorCode;
 
+    #[inline]
     fn into_result(self) -> Result<()> {
         if self.is_err() {
-            Err(self)
+            Err(unsafe { ErrorCode::new_unchecked(self.0) })
         } else {
             Ok(())
         }
     }
 
-    fn from_error(v: Self::Error) -> Self {
-        v
+    #[inline]
+    fn from_error(ec: Self::Error) -> Self {
+        ec.into()
     }
 
+    #[inline]
     fn from_ok(_: Self::Ok) -> Self {
-        Self::succeeded()
+        Self::success()
     }
 }
 
 impl From<u32> for ResultCode {
     fn from(code: u32) -> Self {
         Self(code)
+    }
+}
+
+impl From<ErrorCode> for ResultCode {
+    fn from(ec: ErrorCode) -> Self {
+        Self(ec.0.into())
+    }
+}
+
+impl From<Result<()>> for ResultCode {
+    #[inline]
+    fn from(res: Result<()>) -> ResultCode {
+        match res {
+            Ok(()) => ResultCode::from_ok(()),
+            Err(e) => ResultCode::from_error(e),
+        }
     }
 }
 
@@ -42,12 +71,24 @@ impl ResultCode {
         Self(level << 27 | summary << 21 | (module as u32) << 10 | (description & 0b11_1111_1111))
     }
 
-    pub const fn succeeded() -> Self {
+    pub const fn success() -> Self {
         Self(0)
     }
+}
 
-    pub fn level(&self) -> Level {
-        match ((self.0 >> 27) & 0b1_1111) as u8 {
+pub trait ResultValue {
+    fn value(&self) -> u32;
+
+    fn is_err(&self) -> bool {
+        self.value() != 0
+    }
+
+    fn is_ok(&self) -> bool {
+        !self.is_err()
+    }
+
+    fn level(&self) -> Level {
+        match ((self.value() >> 27) & 0b1_1111) as u8 {
             0 => Level::Success,
             1 => Level::Info,
             25 => Level::Status,
@@ -61,22 +102,56 @@ impl ResultCode {
         }
     }
 
-    pub fn summary(&self) -> Summary {
-        ((self.0 >> 21) & 0b11_1111).into()
+    fn summary(&self) -> Summary {
+        ((self.value() >> 21) & 0b11_1111).into()
     }
 
-    pub const fn module(&self) -> u8 {
-        ((self.0 >> 10) & 0b1111_1111) as u8
+    fn module(&self) -> u8 {
+        ((self.value() >> 10) & 0b1111_1111) as u8
     }
 
-    pub const fn description(&self) -> u32 {
-        self.0 & 0b11_1111_1111
-    }
-
-    pub const fn is_err(&self) -> bool {
-        self.0 & (1 << 31) != 0
+    fn description(&self) -> u32 {
+        self.value() & 0b11_1111_1111
     }
 }
+
+impl ResultValue for ResultCode {
+    fn value(&self) -> u32 {
+        self.0
+    }
+}
+
+impl ResultValue for ErrorCode {
+    fn value(&self) -> u32 {
+        self.0.into()
+    }
+}
+
+macro_rules! result_value_dbg_fmt {
+    ($rv_type: ty) => {
+        impl fmt::Debug for $rv_type {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                if self.is_err() {
+                    f.debug_struct(stringify!($rv_type))
+                        .field("value", &self.value())
+                        .field("level", &self.level())
+                        .field("module", &self.module())
+                        .field("summary", &self.summary())
+                        .field("description", &self.description())
+                        .finish()
+                } else {
+                    f.debug_struct(stringify!($rv_type))
+                        .field("value", &self.value())
+                        .field("level", &self.level())
+                        .finish()
+                }
+            }
+        }
+    };
+}
+
+result_value_dbg_fmt!(ResultCode);
+result_value_dbg_fmt!(ErrorCode);
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Level {
