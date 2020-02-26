@@ -1,4 +1,7 @@
-use crate::result::ResultCode;
+use crate::{
+    os::Handle,
+    result::{Result, ResultCode},
+};
 
 use core::{convert::TryInto, time::Duration};
 
@@ -15,6 +18,8 @@ extern "C" {
     ) -> ResultCode;
     fn svcGetSystemInfo(out: *mut i64, sysinfo_type: u32, param: i32) -> ResultCode;
     fn svcSleepThread(ns: u64) -> ResultCode;
+    fn svcCloseHandle(handle: u32) -> ResultCode;
+    fn svcDuplicateHandle(copy: *mut u32, original: u32) -> ResultCode;
 }
 
 pub fn output_debug_string(message: &str) {
@@ -91,7 +96,7 @@ pub unsafe fn control_memory(
     size: usize,
     op: mem::MemoryOperation,
     permission: mem::MemoryPermission,
-) -> Result<usize, ResultCode> {
+) -> Result<usize> {
     let mut dest: usize = 0;
     svcControlMemory(
         &mut dest as *mut usize,
@@ -105,7 +110,7 @@ pub unsafe fn control_memory(
     Ok(dest)
 }
 
-pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64, ResultCode> {
+pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64> {
     let mut out: i64 = 0;
     svcGetSystemInfo(&mut out as *mut i64, sysinfo_type, param)?;
     Ok(out)
@@ -114,4 +119,14 @@ pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64, Resu
 pub fn sleep_thread(duration: Duration) -> ResultCode {
     let ns: u64 = duration.as_nanos().try_into().unwrap_or(u64::max_value());
     unsafe { svcSleepThread(ns) }
+}
+
+pub fn close_handle(handle: Handle) -> ResultCode {
+    unsafe { svcCloseHandle(handle.as_raw()) }
+}
+
+pub fn duplicate_handle(handle: &Handle) -> Result<Handle> {
+    let mut out_handle: u32 = 0;
+    unsafe { svcDuplicateHandle(&mut out_handle, handle.as_raw())? };
+    Ok(Handle::new(out_handle))
 }
