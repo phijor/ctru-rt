@@ -6,6 +6,7 @@
 
 pub mod debug;
 pub mod env;
+pub mod ipc;
 pub mod os;
 pub mod result;
 pub mod svc;
