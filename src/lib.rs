@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(try_trait)]
+#![feature(asm)]
 #![cfg_attr(feature = "heap", feature(alloc_error_handler))]
 
 pub mod debug;
@@ -7,6 +8,7 @@ pub mod env;
 pub mod os;
 pub mod result;
 pub mod svc;
+pub mod tls;
 
 #[cfg(feature = "heap")]
 pub mod heap;
