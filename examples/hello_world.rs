@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(start)]
 
 use core::time::Duration;
 use core::{fmt::Write, panic::PanicInfo};
@@ -31,7 +30,7 @@ fn main() {
     )
     .expect("Failed to write Hello World");
 
-    ctru_rt::svc::sleep_thread(Duration::from_secs(2));
+    let _ = ctru_rt::svc::sleep_thread(Duration::from_secs(2));
 
-    writeln!(log, "Bye-bye!");
+    let _ = writeln!(log, "Bye-bye!");
 }
