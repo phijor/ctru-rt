@@ -17,3 +17,23 @@ impl core::fmt::Write for SvcDebugLog {
         }
     }
 }
+
+#[macro_export]
+macro_rules! debug {
+    ($fmt: expr, $($args: tt,)*) => {
+        #[cfg(debug_assertions)]
+        {
+            let write = || {
+                use core::fmt::Write;
+
+                let _ = write!($crate::debug::SvcDebugLog, $fmt, $($args),*);
+            };
+
+            write()
+        }
+    };
+
+    ($fmt: expr, $($args: tt),*) => {
+        debug!($fmt, $($args,)*)
+    }
+}
