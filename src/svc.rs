@@ -18,6 +18,7 @@ extern "C" {
     ) -> ResultCode;
     fn svcGetSystemInfo(out: *mut i64, sysinfo_type: u32, param: i32) -> ResultCode;
     fn svcSleepThread(ns: u64) -> ResultCode;
+    fn svcConnectToPort(out_handle: *mut u32, port_name: *const u8) -> ResultCode;
     fn svcSendSyncRequest(handle: u32) -> ResultCode;
     fn svcCloseHandle(handle: u32) -> ResultCode;
     fn svcDuplicateHandle(copy: *mut u32, original: u32) -> ResultCode;
@@ -120,6 +121,12 @@ pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64> {
 pub fn sleep_thread(duration: Duration) -> ResultCode {
     let ns: u64 = duration.as_nanos().try_into().unwrap_or(u64::max_value());
     unsafe { svcSleepThread(ns) }
+}
+
+pub fn connect_to_port(port_name: &str) -> Result<Handle> {
+    let mut out_handle: u32 = 0;
+    unsafe { svcConnectToPort(&mut out_handle, port_name.as_ptr())? };
+    Ok(Handle::new(out_handle))
 }
 
 pub unsafe fn send_sync_request(handle: &Handle, command_buffer: *mut u32) -> Result<*mut u32> {

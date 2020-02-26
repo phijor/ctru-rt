@@ -9,6 +9,7 @@ pub mod env;
 pub mod ipc;
 pub mod os;
 pub mod result;
+pub mod services;
 pub mod svc;
 pub mod tls;
 
