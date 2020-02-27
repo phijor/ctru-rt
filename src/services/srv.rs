@@ -5,15 +5,23 @@ use crate::{
     svc,
 };
 
+#[derive(Debug, Copy, Clone)]
+pub enum BlockingPolicy {
+    Blocking = 0,
+    NonBlocking = 1,
+}
+
 #[derive(Debug)]
 pub struct Srv {
     handle: Handle,
+    blocking_policy: BlockingPolicy,
 }
 
 impl Srv {
     pub fn init() -> Result<Self> {
         let srv = Self {
             handle: svc::connect_to_port("srv:\0")?,
+            blocking_policy: BlockingPolicy::Blocking,
         };
 
         srv.register_client()?;
@@ -27,6 +35,14 @@ impl Srv {
             .with_translate_params(&[TranslateParameterSet::ProcessId])
             .dispatch(&self.handle)
             .map(drop)
+    }
+
+    pub fn blocking_policy(&self) -> BlockingPolicy {
+        self.blocking_policy
+    }
+
+    pub fn set_blocking_policy(&mut self, blocking_policy: BlockingPolicy) {
+        self.blocking_policy = blocking_policy
     }
 
     pub fn enable_notifications(&self) -> Result<Handle> {
@@ -46,7 +62,7 @@ impl Srv {
         };
 
         let reply = ipc::IpcRequest::command(0x5)
-            .with_params(&[buf[0], buf[1], len, 0])
+            .with_params(&[buf[0], buf[1], len, self.blocking_policy as u32])
             .dispatch(&self.handle)?;
 
         Ok(reply
