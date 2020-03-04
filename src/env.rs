@@ -1,8 +1,13 @@
 extern "C" {
     static __apt_appid: u32;
     static __heap_size: u32;
+    static __service_ptr: *const u8;
     static __system_arglist: *const u8;
     static __system_runflags: u32;
+}
+
+pub fn is_homebrew() -> bool {
+    unsafe { !__service_ptr.is_null() }
 }
 
 pub fn app_id() -> u32 {
