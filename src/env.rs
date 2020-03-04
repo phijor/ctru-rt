@@ -1,16 +1,15 @@
-pub fn app_id() -> u32 {
-    extern "C" {
-        static __apt_appid: u32;
-    }
+extern "C" {
+    static __apt_appid: u32;
+    static __heap_size: u32;
+    static __system_arglist: *const u8;
+    static __system_runflags: u32;
+}
 
+pub fn app_id() -> u32 {
     unsafe { __apt_appid }
 }
 
 pub fn system_runflags() -> u32 {
-    extern "C" {
-        static __system_runflags: u32;
-    }
-
     unsafe { __system_runflags }
 }
 
@@ -51,10 +50,6 @@ impl core::iter::Iterator for SystemArgList {
 impl core::iter::ExactSizeIterator for SystemArgList {}
 
 pub fn system_arglist() -> SystemArgList {
-    extern "C" {
-        static __system_arglist: *const u8;
-    }
-
     let length_ptr = unsafe { __system_arglist } as *const u32;
     let (length, arguments) = unsafe { (*length_ptr as usize, length_ptr.offset(1) as *const u8) };
 
@@ -62,9 +57,5 @@ pub fn system_arglist() -> SystemArgList {
 }
 
 pub fn heap_size() -> usize {
-    extern "C" {
-        static __heap_size: u32;
-    }
-
     unsafe { __heap_size as usize }
 }
