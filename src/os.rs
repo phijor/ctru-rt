@@ -1,18 +1,19 @@
-use crate::{result::Result, svc};
+use crate::{debug, result::Result, svc};
+
+use core::{fmt, marker::PhantomData, num::NonZeroU32, ops::Try};
 
 use volatile::ReadOnly;
 
 pub mod cfgmem;
+pub mod sharedmem;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
-pub struct Handle(u32);
+pub struct WeakHandle<'a>(u32, PhantomData<&'a u32>);
 
-impl !Send for Handle {}
-
-impl Handle {
+impl WeakHandle<'_> {
     pub(crate) const fn new(raw_handle: u32) -> Self {
-        Self(raw_handle)
+        Self(raw_handle, PhantomData)
     }
 
     pub const fn active_thread() -> Self {
@@ -27,23 +28,66 @@ impl Handle {
         self.0
     }
 
-    pub(crate) fn copy_raw(&self) -> Self {
-        Self(self.0)
+    pub(crate) fn into_raw(self) -> u32 {
+        self.0
     }
 
-    pub(crate) fn invalid() -> Self {
-        Self(0)
-    }
-
-    pub fn try_clone(&self) -> Result<Self> {
-        svc::duplicate_handle(self)
+    pub(crate) const fn invalid() -> Self {
+        Self::new(0)
     }
 }
 
-impl Clone for Handle {
-    fn clone(&self) -> Self {
-        self.try_clone()
-            .expect("system call duplicating handle failed")
+#[repr(transparent)]
+pub struct Handle {
+    handle: Option<NonZeroU32>,
+    _unsend_marker: PhantomData<*const u32>,
+}
+
+impl Handle {
+    pub unsafe fn new(raw_handle: u32) -> Self {
+        Self {
+            handle: NonZeroU32::new(raw_handle),
+            _unsend_marker: PhantomData,
+        }
+    }
+
+    pub unsafe fn own(handle: WeakHandle) -> Self {
+        Self::new(handle.as_raw())
+    }
+
+    pub unsafe fn close(&mut self) -> Result<()> {
+        if let Some(handle) = self.handle.take() {
+            svc::close_handle(WeakHandle::new(handle.into())).into_result()
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn handle(&self) -> WeakHandle {
+        match self.handle {
+            None => WeakHandle::invalid(),
+            Some(h) => WeakHandle::new(h.into()),
+        }
+    }
+
+    pub fn try_duplicate(&self) -> Result<Self> {
+        svc::duplicate_handle(self.handle())
+    }
+}
+
+impl Drop for Handle {
+    fn drop(&mut self) {
+        debug!("Dropping handle {:#08x?}", self);
+        let _ = unsafe { self.close() };
+    }
+}
+
+impl fmt::Debug for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.handle {
+            Some(h) => f.debug_tuple("Handle").field(&h).finish(),
+            None => f.write_str("Handle::invalid()"),
+        }
     }
 }
 

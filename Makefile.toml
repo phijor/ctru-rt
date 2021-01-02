@@ -17,8 +17,8 @@ args = ["build", "${XBUILD_FLAGS}", "--examples", "${@}"]
 dependencies = ["build-examples"]
 command = "3dsxtool"
 args = [
-	"target/${XTARGET}/debug/examples/hello_world.elf",
-	"target/${XTARGET}/debug/examples/hello_world.3dsx",
+	"target/${XTARGET}/debug/examples/service.elf",
+	"target/${XTARGET}/debug/examples/service.3dsx",
 ]
 
 [tasks.default]

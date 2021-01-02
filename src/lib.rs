@@ -2,7 +2,7 @@
 #![feature(try_trait)]
 #![feature(optin_builtin_traits)]
 #![feature(asm)]
-#![cfg_attr(feature = "heap", feature(alloc_error_handler))]
+#![cfg_attr(feature = "heap", feature(alloc_error_handler, allocator_api))]
 
 pub mod debug;
 pub mod env;
@@ -35,6 +35,8 @@ macro_rules! entry {
 
 #[no_mangle]
 unsafe extern "C" fn _ctru_rt_start() {
+    use crate::svc::output_debug_string;
+
     extern "C" {
         static mut __bss_start__: u32;
         static mut __bss_end__: u32;
@@ -43,11 +45,18 @@ unsafe extern "C" fn _ctru_rt_start() {
         static __init_array_end: extern "C" fn();
     }
 
+    output_debug_string("Zeroing BSS");
     r0::zero_bss(&mut __bss_start__, &mut __bss_end__);
+    output_debug_string("Running init array");
     r0::run_init_array(&__init_array_start, &__init_array_end);
 
     #[cfg(feature = "heap")]
-    crate::heap::init().expect("Failed to initialize heap");
+    {
+        output_debug_string("Initializing heap");
+        crate::heap::init().expect("Failed to initialize heap");
+    }
+    // output_debug_string("Initializing shared memory");
+    // crate::os::sharedmem::init();
 
     extern "Rust" {
         fn main();

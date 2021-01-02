@@ -1,13 +1,14 @@
 use super::{IpcHeader, TranslationDescriptor, COMMAND_BUFFER_LENGTH};
 use crate::{
-    debug,
-    os::Handle,
+    os::WeakHandle,
     result::{Result, ResultCode},
 };
 
+use log::debug;
+
 use core::{
     marker::PhantomData,
-    ops::{Range, Try},
+    ops::{Index, Range, Try},
 };
 
 pub(crate) struct ReplyBuffer<'a>(*const u32, *const u32, PhantomData<&'a u32>);
@@ -78,10 +79,11 @@ impl<'a> ReplyBuffer<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Reply<'a> {
     pub command_id: u16,
-    pub values: Option<&'a [u32]>,
-    pub translate_values: Option<&'a [Handle]>,
+    pub values: ReplyValues<'a>,
+    pub translate_values: ReplyTranslateValues<'a>,
 }
 
 impl<'a> Reply<'a> {
@@ -121,15 +123,50 @@ impl<'a> Reply<'a> {
                 debug!("Handles: {:08x?}", handles);
 
                 Some(unsafe {
-                    core::slice::from_raw_parts(handles.as_ptr() as *const Handle, handles.len())
+                    core::slice::from_raw_parts(
+                        handles.as_ptr() as *const WeakHandle,
+                        handles.len(),
+                    )
                 })
             }
         };
 
         Ok(Self {
             command_id: header.command_id(),
-            values,
-            translate_values,
+            values: ReplyValues { values },
+            translate_values: ReplyTranslateValues {
+                values: translate_values,
+            },
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct ReplyValues<'a> {
+    values: Option<&'a [u32]>,
+}
+
+impl<'a> Index<usize> for ReplyValues<'a> {
+    type Output = u32;
+    fn index(&self, index: usize) -> &Self::Output {
+        match self.values {
+            None => panic!("Cannot index into empty set of reply values"),
+            Some(values) => &values[index],
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ReplyTranslateValues<'a> {
+    values: Option<&'a [WeakHandle<'a>]>,
+}
+
+impl<'a> Index<usize> for ReplyTranslateValues<'a> {
+    type Output = WeakHandle<'a>;
+    fn index(&self, index: usize) -> &Self::Output {
+        match self.values {
+            None => panic!("Cannot index into empty set of reply translate values"),
+            Some(values) => &values[index],
+        }
     }
 }
