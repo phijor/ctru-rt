@@ -1,6 +1,6 @@
 #![no_std]
 #![feature(try_trait)]
-#![feature(optin_builtin_traits)]
+#![feature(auto_traits)]
 #![feature(asm)]
 #![cfg_attr(feature = "heap", feature(alloc_error_handler, allocator_api))]
 
