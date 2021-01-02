@@ -40,23 +40,16 @@ unsafe extern "C" fn _ctru_rt_start() {
     extern "C" {
         static mut __bss_start__: u32;
         static mut __bss_end__: u32;
-
-        static __init_array_start: extern "C" fn();
-        static __init_array_end: extern "C" fn();
     }
 
     output_debug_string("Zeroing BSS");
     r0::zero_bss(&mut __bss_start__, &mut __bss_end__);
-    output_debug_string("Running init array");
-    r0::run_init_array(&__init_array_start, &__init_array_end);
 
     #[cfg(feature = "heap")]
     {
         output_debug_string("Initializing heap");
         crate::heap::init().expect("Failed to initialize heap");
     }
-    // output_debug_string("Initializing shared memory");
-    // crate::os::sharedmem::init();
 
     extern "Rust" {
         fn main();
@@ -72,29 +65,7 @@ unsafe extern "C" fn _ctru_rt_start() {
 /// crate requires this symbol and the linker gets angry if it can't find it.  So some time in the
 /// future we should figure out how and under which circumstances we can get rid of it.
 #[no_mangle]
-pub fn __aeabi_unwind_cpp_pr0() {}
+pub fn __aeabi_unwind_cpp_pr1() {}
 
-#[doc(hidden)]
-/// libcore depends on someone (libc usually?) providing memcmp().  We do not build on top of libc,
-/// so this is a workaround to get libcore to compile with std-aware cargo.  Note that this is a
-/// highly inefficient memcmp implementation.
-///
-/// See also: https://github.com/rust-lang/rust/issues/32610
 #[no_mangle]
-pub unsafe extern "C" fn memcmp(mut s1: *const u8, mut s2: *const u8, size: usize) -> i32 {
-    let end_ptr = s1.offset(size as isize);
-    while s1 != end_ptr {
-        let v1: i32 = s1.read().into();
-        let v2: i32 = s2.read().into();
-
-        match v1 - v2 {
-            0 => {
-                s1 = s1.offset(1);
-                s2 = s2.offset(1);
-            }
-            diff => return diff,
-        }
-    }
-
-    0
-}
+pub fn __aeabi_unwind_cpp_pr0() {}

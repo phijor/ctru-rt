@@ -67,21 +67,6 @@ SECTIONS
         __bss_end__ = .;
 	} : DATA
 
-	.preinit_array ALIGN(4) :
-	{
-		PROVIDE (__preinit_array_start = .);
-		KEEP (*(.preinit_array))
-		PROVIDE (__preinit_array_end = .);
-	} : DATA
-
-	.init_array ALIGN(4) :
-	{
-		PROVIDE (__init_array_start = .);
-		KEEP (*(SORT(.init_array.*)))
-		KEEP (*(.init_array))
-		PROVIDE (__init_array_end = .);
-	} : DATA
-
     __end__ = ABSOLUTE(.) ;
 
     /* Stabs debugging sections. */
