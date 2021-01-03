@@ -62,16 +62,9 @@ impl SharedMemoryMapper {
             self.next_candidate = next;
         }
 
-        let my_permissions = MemoryPermission::R;
-        let other_permissions = MemoryPermission::DontCare;
-
         debug!(
-            "Mapping memory block at {:p}, size = 0x{:x}, handle = {:?}, perm = ({:x}, {:x})",
-            address as *const u32,
-            size,
-            memory_handle,
-            my_permissions as u32,
-            other_permissions as u32,
+            "Mapping memory block at {:p}, size = 0x{:x}, handle = {:?}",
+            address as *const u32, size, memory_handle,
         );
 
         // TODO: figure out how/when this is sound.

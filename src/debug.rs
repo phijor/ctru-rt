@@ -1,44 +1,109 @@
-use crate::svc::output_debug_string;
+use crate::svc::{output_debug_bytes, output_debug_string};
 
 use log::{Level, Log, Metadata, Record};
+
+use alloc::fmt;
 
 #[derive(Default)]
 pub struct SvcDebugLog;
 
 impl SvcDebugLog {}
 
-impl core::fmt::Write for SvcDebugLog {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+impl fmt::Write for SvcDebugLog {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
         Ok(output_debug_string(s))
     }
 
-    #[cfg(feature = "heap")]
-    fn write_fmt(mut self: &mut Self, args: core::fmt::Arguments<'_>) -> core::fmt::Result {
+    fn write_fmt(self: &mut Self, args: fmt::Arguments<'_>) -> fmt::Result {
         if crate::heap::initialized() {
             Ok(output_debug_string(&alloc::fmt::format(args)))
         } else {
-            core::fmt::write(self, args)
+            write_string_fallback(args)
         }
     }
 }
 
+/// Format a string to a fixed size buffer, then write it to the debug log.
+///
+/// This is `#[inline(never)]` so the stack allocation for the fixed size buffer is not necessary
+/// in the presence of a heap.
+#[inline(never)]
+fn write_string_fallback(args: fmt::Arguments) -> fmt::Result {
+    output_debug_string("[INTERNAL] Falling back to heap-less debug write");
+
+    let mut buffer = FixedSizeBufferWriter::<512>::new();
+    fmt::write(&mut buffer, args)?;
+
+    output_debug_bytes(buffer.occupied());
+    Ok(())
+}
+
+#[derive(Debug)]
+pub(crate) struct FixedSizeBufferWriter<const N: usize> {
+    buffer: [u8; N],
+    pos: usize,
+}
+
+impl<const N: usize> FixedSizeBufferWriter<N> {
+    pub(crate) fn new() -> Self {
+        Self {
+            buffer: [0; N],
+            pos: 0,
+        }
+    }
+
+    fn remaining(&mut self) -> &mut [u8] {
+        &mut self.buffer[self.pos..]
+    }
+
+    pub(crate) fn occupied(&self) -> &[u8] {
+        &self.buffer[..self.pos]
+    }
+}
+
+impl<const N: usize> fmt::Write for FixedSizeBufferWriter<N> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let bytes = s.as_bytes();
+        let remaining = self.remaining();
+
+        let printed = &bytes[..bytes.len().min(remaining.len())];
+
+        remaining[..printed.len()].copy_from_slice(printed);
+
+        self.pos += printed.len();
+        self.pos = self.pos.min(N);
+
+        Ok(())
+    }
+}
+
+#[doc(hidden)]
 #[macro_export]
-macro_rules! debug {
-    ($fmt: expr, $($args: tt,)*) => {
+macro_rules! early_debug {
+    ($fmt: expr, $($args: expr,)*) => {
         #[cfg(debug_assertions)]
         {
             let write = || {
-                use core::fmt::Write;
+                use ::alloc::fmt::Write;
+                use $crate::{debug::FixedSizeBufferWriter, svc::output_debug_bytes};
 
-                let _ = write!($crate::debug::SvcDebugLog, $fmt, $($args),*);
+                let mut buffer = FixedSizeBufferWriter::<128>::new();
+
+                let _ = write!(&mut buffer, $fmt, $($args),*);
+
+                output_debug_bytes(buffer.occupied())
             };
 
             write()
         }
     };
 
-    ($fmt: expr, $($args: tt),*) => {
-        debug!($fmt, $($args,)*)
+    ($fmt: expr, $($args: expr),*) => {
+        early_debug!($fmt, $($args,)*)
+    };
+
+    ($fmt: expr) => {
+        $crate::svc::output_debug_string($fmt);
     }
 }
 

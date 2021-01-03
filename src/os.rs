@@ -1,7 +1,8 @@
-use crate::{debug, result::Result, svc};
+use crate::{result::Result, svc};
 
 use core::{fmt, marker::PhantomData, num::NonZeroU32, ops::Try};
 
+use log::debug;
 use volatile::ReadOnly;
 
 pub mod cfgmem;

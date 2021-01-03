@@ -1,4 +1,4 @@
-use crate::{os::mem, result::Result, svc};
+use crate::{early_debug, os::mem, result::Result, svc};
 
 use core::{
     alloc::{Layout, LayoutErr},
@@ -28,21 +28,31 @@ pub fn heap_size() -> usize {
 }
 
 pub(crate) fn init() -> Result<()> {
-    crate::svc::output_debug_string("Initializing heap...\n");
+    let heap_size = heap_size();
 
-    unsafe {
+    early_debug!("Initializing heap...",);
+
+    let heap_start = unsafe {
         let heap_start = svc::control_memory(
             mem::MemoryOperation::allocate(),
             HEAP_START,
             0x0,
-            heap_size(),
+            heap_size,
             mem::MemoryPermission::Rw,
         )?;
 
-        crate::svc::output_debug_string("Mapped heap\n");
+        crate::svc::output_debug_string("Mapped heap");
 
-        ALLOCATOR.lock().init(heap_start, heap_size());
-    }
+        ALLOCATOR.lock().init(heap_start, heap_start);
+
+        heap_start
+    };
+
+    early_debug!(
+        "Initialized heap at {:p}, size = 0x{:08x}",
+        heap_start as *const (),
+        heap_size,
+    );
 
     Ok(())
 }

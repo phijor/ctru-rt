@@ -31,15 +31,17 @@ macro_rules! entry {
 
 #[no_mangle]
 unsafe extern "C" fn _ctru_rt_start() {
-    use crate::svc::output_debug_string;
-
     extern "C" {
         static mut __bss_start__: u32;
         static mut __bss_end__: u32;
     }
 
-    output_debug_string("Zeroing BSS");
     r0::zero_bss(&mut __bss_start__, &mut __bss_end__);
+    crate::early_debug!(
+        "Zeroed BSS: [{:p}, {:p})",
+        __bss_start__ as *const (),
+        __bss_end__ as *const ()
+    );
 
     crate::heap::init().expect("Failed to initialize heap");
 
