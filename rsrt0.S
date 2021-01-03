@@ -16,7 +16,7 @@
 	.section ".crt0","ax"
 	.global _start, __service_ptr, __apt_appid, __heap_size, __linear_heap_size, __system_arglist, __system_runflags
 @---------------------------------------------------------------------------------
-	.align 2
+	.align 4
 	.arm
 @---------------------------------------------------------------------------------
 _start:
@@ -40,6 +40,10 @@ startup:
 	mov r4, lr
 
 	@ Jump to user code
-	ldr r3, =_ctru_rt_start
-	ldr lr, =svcExitProcess
-	bx  r3
+	bl _ctru_rt_start
+	@ Return to saved address if we are running from homebrew
+	ldr r0, __service_ptr
+	cmp r0, #0
+	bxne  r4
+	@ Exit process otherwise
+	svc 0x03
