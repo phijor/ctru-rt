@@ -2,10 +2,11 @@
 #![feature(try_trait)]
 #![feature(auto_traits)]
 #![feature(asm)]
-#![cfg_attr(feature = "heap", feature(alloc_error_handler, allocator_api))]
+#![feature(alloc_error_handler, allocator_api)]
 
 pub mod debug;
 pub mod env;
+pub mod heap;
 pub mod ipc;
 pub mod os;
 pub mod result;
@@ -13,12 +14,7 @@ pub mod services;
 pub mod svc;
 pub mod tls;
 
-#[cfg(feature = "heap")]
-pub mod heap;
-
-#[cfg(feature = "heap")]
 extern crate alloc;
-
 extern crate core;
 
 #[macro_export]
@@ -45,11 +41,7 @@ unsafe extern "C" fn _ctru_rt_start() {
     output_debug_string("Zeroing BSS");
     r0::zero_bss(&mut __bss_start__, &mut __bss_end__);
 
-    #[cfg(feature = "heap")]
-    {
-        output_debug_string("Initializing heap");
-        crate::heap::init().expect("Failed to initialize heap");
-    }
+    crate::heap::init().expect("Failed to initialize heap");
 
     extern "Rust" {
         fn main();

@@ -1,9 +1,6 @@
 use core::{num::NonZeroU32, ops::Try};
 
-#[cfg(feature = "heap")]
 use alloc::fmt;
-#[cfg(not(feature = "heap"))]
-use core::fmt;
 
 pub type Result<T> = core::result::Result<T, ErrorCode>;
 

@@ -50,7 +50,6 @@ impl Log for SvcDebugLog {
     }
 
     fn log(&self, record: &Record) {
-        #[cfg(feature = "heap")]
         if self.enabled(record.metadata()) {
             output_debug_string(&alloc::fmt::format(format_args!(
                 "[{}] {}({}:{}) - {}",
