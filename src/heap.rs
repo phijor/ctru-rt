@@ -1,10 +1,8 @@
 use crate::{early_debug, os::mem, result::Result, svc};
 
-use core::{
-    alloc::{Layout, LayoutErr},
-    fmt,
-    ptr::NonNull,
-};
+#[allow(deprecated)]
+use core::alloc::LayoutErr;
+use core::{alloc::Layout, fmt, ptr::NonNull};
 
 use linked_list_allocator::LockedHeap;
 
@@ -64,7 +62,7 @@ pub(crate) fn initialized() -> bool {
 #[derive(Debug)]
 pub enum PageAlignErr {
     Alloc,
-    Layout(LayoutErr),
+    Layout(#[allow(deprecated)] LayoutErr),
 }
 
 impl fmt::Display for PageAlignErr {
@@ -100,6 +98,7 @@ impl PageAlignedBuffer {
         self.layout.size()
     }
 
+    #[allow(deprecated)]
     pub fn layout_for_size(size: usize) -> ::core::result::Result<Layout, LayoutErr> {
         Layout::from_size_align(size, 0x1000)
     }

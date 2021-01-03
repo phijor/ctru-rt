@@ -24,26 +24,20 @@ impl MappedBlock {
 #[derive(Debug)]
 pub struct SharedMemoryMapper {
     next_candidate: usize,
-    // chunks: VecDeque<Chunk>,
-    // end: PageAdress,
 }
-const SHAREDMEM_START: usize = 0x10_000_000;
-const SHAREDMEM_END: usize = 0x14_000_000;
+
+const SHAREDMEM_START: usize = 0x1000_0000;
+const SHAREDMEM_END: usize = 0x1400_0000;
+
+const ERROR_DESC_OUT_OF_MEMORY: u32 = 1011;
 
 impl SharedMemoryMapper {
     pub fn new() -> Self {
         Self {
             next_candidate: SHAREDMEM_START,
-            // chunks: core::iter::once(Chunk {
-            //     start: PageAdress(SHAREDMEM_START),
-            //     mapped: None,
-            // })
-            // .collect(),
-            // end: PageAdress(SHAREDMEM_END),
         }
     }
 
-    // pub fn map_memory(&mut self, memory_handle: Handle, size: usize) -> Result<&'_ MappedChunk> {
     pub fn map(&mut self, memory_handle: Handle, size: usize) -> Result<MappedBlock> {
         let size = (size + 0xFFF) & !0xFFF;
 
@@ -51,7 +45,7 @@ impl SharedMemoryMapper {
             Level::Fatal,
             Summary::OutOfResource,
             Module::Application,
-            1011,
+            ERROR_DESC_OUT_OF_MEMORY,
         ))?;
 
         let next = self.next_candidate.saturating_add(size);
@@ -67,10 +61,13 @@ impl SharedMemoryMapper {
             address as *const u32, size, memory_handle,
         );
 
+        let my_permissions = MemoryPermission::R;
+        let other_permissions = MemoryPermission::DontCare;
+
         // TODO: figure out how/when this is sound.
-        // Probably never at the moment; we need to tie the lifetime of the slice to the lifetime
-        // of `memory_handle`.
-        let _ = unsafe {
+        // Probably never at the moment; we need to tie the lifetime of the mapped block to the
+        // lifetime of `memory_handle`.
+        unsafe {
             svc::map_memory_block(
                 memory_handle.handle(),
                 address,
@@ -131,104 +128,5 @@ impl SharedMemoryMapper {
             Some(address) => Ok(Some(address)),
             None => self.find_gap_within(SHAREDMEM_START, self.next_candidate, size),
         }
-
-        // let mut chunks = self.chunks.iter_mut().enumerate().peekable();
-        // loop {
-        //     match chunks.next() {
-        //         Some((index, chunk)) => {
-        //             if chunk.mapped.is_some() {
-        //                 continue;
-        //             }
-
-        //             let next_start = chunks
-        //                 .peek()
-        //                 .map(|(_, next)| next.start)
-        //                 .unwrap_or(self.end);
-        //             let available = next_start.offset_from(chunk.start);
-
-        //             match available.checked_sub(size) {
-        //                 None => continue,
-        //                 Some(0) => {
-        //                     let _ = chunk.mapped.replace(unimplemented!());
-        //                 }
-        //                 Some(rest) => unimplemented!(),
-        //             }
-        //         }
-        //         None => return None,
-        //     }
-        // }
     }
 }
-
-// pub(crate) static ALLOCATOR: SharedMemoryMapper = SharedMemoryMapper::new();
-
-// pub(crate) fn init() {
-//     unsafe {
-//         unimplemented!()
-//         // ALLOCATOR.lock().init(SHAREDMEM_START, SHAREDMEM_SIZE);
-//     }
-// }
-
-// #[derive(Debug)]
-// pub struct SharedMemoryBuffer<T> {
-//     data: NonNull<T>,
-// }
-//
-// impl<T: Send> SharedMemoryBuffer<T> {
-//     pub fn new(value: T) -> Self {
-//         let data = unsafe {
-//             let data = promote_non_null::<T>(
-//                 ALLOCATOR
-//                     .lock()
-//                     .allocate_first_fit(aligned_layout_for_value(&value))
-//                     .expect("Failed to allocate shared memory buffer"),
-//             );
-//
-//             ptr::write(data.as_ptr(), value);
-//             data
-//         };
-//
-//         Self { data }
-//     }
-// }
-//
-// impl<T> Drop for SharedMemoryBuffer<T> {
-//     fn drop(&mut self) {
-//         unsafe {
-//             ptr::drop_in_place(self.data.as_ptr());
-//             ALLOCATOR.lock().deallocate(
-//                 demote_non_null(self.data),
-//                 aligned_layout_for_value(self.deref()),
-//             )
-//         }
-//     }
-// }
-//
-// impl<T> Deref for SharedMemoryBuffer<T> {
-//     type Target = T;
-//
-//     fn deref(&self) -> &Self::Target {
-//         unsafe { self.data.as_ref() }
-//     }
-// }
-//
-// impl<T> DerefMut for SharedMemoryBuffer<T> {
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         unsafe { self.data.as_mut() }
-//     }
-// }
-//
-// unsafe fn promote_non_null<T>(ptr: NonNull<u8>) -> NonNull<T> {
-//     NonNull::new_unchecked(ptr.as_ptr() as *mut T)
-// }
-//
-// unsafe fn demote_non_null<T>(ptr: NonNull<T>) -> NonNull<u8> {
-//     NonNull::new_unchecked(ptr.as_ptr() as *mut u8)
-// }
-//
-// unsafe fn aligned_layout_for_value<T>(value: &T) -> Layout {
-//     Layout::from_size_align_unchecked(
-//         core::mem::size_of_val(value),
-//         core::mem::align_of_val(value).max(0x1000),
-//     )
-// }

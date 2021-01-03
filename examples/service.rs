@@ -3,14 +3,13 @@
 
 use core::{fmt::Write, panic::PanicInfo, time::Duration};
 
-use log::{debug, error, info};
+use log::{error, info};
 
 use ctru_rt::{
     debug::SvcDebugLog,
     entry,
-    heap::{PageAlignErr, PageAlignedBuffer},
     os::sharedmem::SharedMemoryMapper,
-    result::{ErrorCode, Level, Module, Result, Summary},
+    result::Result,
     services,
     svc::{sleep_thread, UserBreakReason},
 };
