@@ -5,6 +5,7 @@ use core::{fmt, marker::PhantomData, num::NonZeroU32, ops::Try};
 use volatile::ReadOnly;
 
 pub mod cfgmem;
+pub mod mem;
 pub mod sharedmem;
 
 #[derive(Debug, Copy, Clone)]

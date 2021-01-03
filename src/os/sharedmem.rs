@@ -1,9 +1,9 @@
-use super::Handle;
-use crate::result::{ErrorCode, Level, Module, Result, Summary};
-use crate::svc::{
-    self,
+use super::{
     mem::{MemoryPermission, MemoryState, QueryResult},
+    Handle,
 };
+use crate::result::{ErrorCode, Level, Module, Result, Summary};
+use crate::svc;
 
 use log::debug;
 

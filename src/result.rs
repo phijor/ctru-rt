@@ -10,7 +10,11 @@ pub type Result<T> = core::result::Result<T, ErrorCode>;
 pub struct ResultCode(u32);
 
 impl ResultCode {
-    pub fn map<T, F: FnOnce() -> T>(self, f: F) -> Result<T> {
+    pub fn and<T>(self, value: T) -> Result<T> {
+        self.into_result().map(|_: ()| value)
+    }
+
+    pub fn and_then<T, F: FnOnce() -> T>(self, f: F) -> Result<T> {
         self.into_result().map(|_: ()| f())
     }
 }

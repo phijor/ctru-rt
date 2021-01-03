@@ -2,10 +2,9 @@ use super::srv::Srv;
 use crate::{
     heap::PageAlignedBuffer,
     ipc::{IpcRequest, TranslateParameterSet},
-    os::Handle,
+    os::{mem::MemoryPermission, Handle},
     result::{ErrorCode as SystemErrorCode, Result as SystemResult},
-    svc::{self, mem::MemoryPermission},
-    tls,
+    svc, tls,
 };
 
 use core::{marker::PhantomData, num::NonZeroU32};
@@ -21,7 +20,7 @@ impl Soc {
     pub fn init(srv: &Srv, buffer: PageAlignedBuffer) -> SystemResult<Self> {
         let buffer_handle = unsafe {
             svc::create_memory_block(
-                buffer.as_ptr(),
+                buffer.as_ptr() as usize,
                 buffer.size(),
                 MemoryPermission::None,
                 MemoryPermission::Rw,

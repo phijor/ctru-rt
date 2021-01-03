@@ -1,170 +1,38 @@
 use crate::{
-    os::{Handle, WeakHandle},
+    os::{
+        mem::{MemoryOperation, MemoryPermission, QueryResult},
+        Handle, WeakHandle,
+    },
     result::{Result, ResultCode},
 };
 
-use core::{convert::TryInto, ops::Try, time::Duration};
+use core::{convert::TryInto, time::Duration};
 
-extern "C" {
-    fn svcOutputDebugString(message: *const u8, length: usize);
-    fn svcExitProcess();
-    fn svcControlMemory(
-        dest: *mut usize,
-        addr0: usize,
-        addr1: usize,
-        size: usize,
-        op: u32,
-        permission: u32,
-    ) -> ResultCode;
-    fn svcCreateMemoryBlock(
-        memory_handle: *mut u32,
-        address: *const u8,
-        size: usize,
-        my_permissions: u32,
-        other_permissions: u32,
-    ) -> ResultCode;
-    fn svcMapMemoryBlock(
-        handle: u32,
-        address: usize,
-        size: usize,
-        my_permissions: u32,
-        other_permissions: u32,
-    ) -> ResultCode;
-    fn svcGetSystemInfo(out: *mut i64, sysinfo_type: u32, param: i32) -> ResultCode;
-    fn svcSleepThread(ns: u64) -> ResultCode;
-    fn svcConnectToPort(out_handle: *mut u32, port_name: *const u8) -> ResultCode;
-    fn svcSendSyncRequest(handle: u32) -> ResultCode;
-    fn svcCloseHandle(handle: u32) -> ResultCode;
-    fn svcDuplicateHandle(copy: *mut u32, original: u32) -> ResultCode;
+pub unsafe fn control_memory(
+    op: MemoryOperation,
+    addr0: usize,
+    addr1: usize,
+    size: usize,
+    permission: MemoryPermission,
+) -> Result<usize> {
+    let result_code: u32;
+    let mut dest_addr: usize;
+
+    asm!(
+        "svc 0x01",
+        in("r0") op.0,
+        in("r1") addr0,
+        in("r2") addr1,
+        in("r3") size,
+        in("r4") permission as u32,
+        lateout("r0") result_code,
+        lateout("r1") dest_addr,
+    );
+
+    ResultCode::from(result_code).and(dest_addr)
 }
 
-pub fn output_debug_string(message: &str) {
-    unsafe {
-        asm!(
-            "svc 0x3d",
-            in("r0") message.as_ptr(),
-            in("r1") message.len(),
-        );
-    }
-    // unsafe { svcOutputDebugString(message.as_ptr(), message.len()) }
-}
-
-#[derive(Debug)]
-pub enum UserBreakReason {
-    Panic = 0,
-    Assert = 1,
-    User = 2,
-    LoadRo = 3,
-    UnloadRo = 4,
-}
-
-pub fn user_break(reason: UserBreakReason) -> ! {
-    unsafe {
-        asm!(
-            "svc 0x3c",
-            in("r0") (reason as u32),
-        );
-    }
-
-    loop {}
-}
-
-pub fn exit_process() -> ! {
-    unsafe { svcExitProcess() }
-
-    loop {}
-}
-
-pub mod mem {
-    use crate::os::MemoryRegion;
-
-    #[repr(u32)]
-    #[derive(Debug, Clone, Copy)]
-    pub enum MemoryOperationTarget {
-        Heap = 0x0_0000,
-        Linear = 0x1_0000,
-    }
-
-    #[repr(u32)]
-    #[derive(Debug, Clone, Copy)]
-    pub enum MemoryOperationRegion {
-        App = (MemoryRegion::Application as u32) << 16,
-        System = (MemoryRegion::System as u32) << 16,
-        Base = (MemoryRegion::Base as u32) << 16,
-    }
-
-    #[repr(u32)]
-    #[derive(Debug, Clone, Copy)]
-    pub enum MemoryOperationAction {
-        Free = 1,
-        Reserve = 2,
-        Allocate = 3,
-        Map = 4,
-        Unmap = 5,
-        ChangeProtection = 6,
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    pub struct MemoryOperation(pub(crate) u32);
-
-    impl MemoryOperation {
-        #[inline]
-        pub const fn new(
-            action: MemoryOperationAction,
-            region: MemoryOperationRegion,
-            target: MemoryOperationTarget,
-        ) -> Self {
-            Self((action as u32) | (region as u32) | (target as u32))
-        }
-
-        #[inline]
-        pub const fn allocate() -> Self {
-            Self(MemoryOperationAction::Allocate as u32)
-        }
-    }
-
-    #[repr(u32)]
-    #[derive(Debug, Clone, Copy)]
-    pub enum MemoryPermission {
-        None = 0,
-        R = 1,
-        W = 2,
-        Rw = 3,
-        X = 4,
-        Rx = 5,
-        Wx = 6,
-        Rwx = 7,
-        DontCare = 0x1000_0000,
-    }
-
-    #[repr(u32)]
-    #[derive(Debug, Clone, Copy)]
-    pub enum MemoryState {
-        Free = 0,
-        Reserved = 1,
-        Io = 2,
-        Static = 3,
-        Code = 4,
-        Private = 5,
-        Shared = 6,
-        Continuous = 7,
-        Aliased = 8,
-        Alias = 9,
-        AliasCode = 10,
-        Locked = 11,
-    }
-
-    #[derive(Debug)]
-    pub struct QueryResult {
-        pub base_process_virtual_address: usize,
-        pub size: usize,
-        pub permission: MemoryPermission,
-        pub state: MemoryState,
-        pub page_flags: u32,
-    }
-}
-
-pub unsafe fn query_memory(addr: usize) -> Result<mem::QueryResult> {
+pub unsafe fn query_memory(addr: usize) -> Result<QueryResult> {
     let mut result_code: u32;
     let mut base_process_virtual_address: usize;
     let mut size: usize;
@@ -190,7 +58,7 @@ pub unsafe fn query_memory(addr: usize) -> Result<mem::QueryResult> {
         )
     };
 
-    ResultCode::from(result_code).map(|| mem::QueryResult {
+    ResultCode::from(result_code).and_then(|| QueryResult {
         base_process_virtual_address,
         size,
         permission,
@@ -199,49 +67,59 @@ pub unsafe fn query_memory(addr: usize) -> Result<mem::QueryResult> {
     })
 }
 
-pub unsafe fn control_memory(
-    addr0: usize,
-    addr1: usize,
-    size: usize,
-    op: mem::MemoryOperation,
-    permission: mem::MemoryPermission,
-) -> Result<usize> {
-    let mut dest: usize = 0;
-    svcControlMemory(
-        &mut dest as *mut usize,
-        addr0,
-        addr1,
-        size,
-        op.0,
-        permission as u32,
-    )?;
+pub fn exit_process() -> ! {
+    unsafe { asm!("svc 0x03") }
 
-    Ok(dest)
+    loop {}
+}
+
+pub fn sleep_thread(duration: Duration) {
+    let ns: u64 = duration.as_nanos().try_into().unwrap_or(u64::max_value());
+
+    let ns_low = ns as u32;
+    let ns_high = (ns >> 32) as u32;
+
+    unsafe {
+        asm!(
+            "svc 0x0a",
+            in("r0") ns_low,
+            in("r1") ns_high,
+        );
+    }
 }
 
 pub unsafe fn create_memory_block(
-    address: *const u8,
+    address: usize,
     size: usize,
-    my_permissions: mem::MemoryPermission,
-    other_permissions: mem::MemoryPermission,
+    my_permissions: MemoryPermission,
+    other_permissions: MemoryPermission,
 ) -> Result<Handle> {
-    let mut memory_handle = 0;
-    svcCreateMemoryBlock(
-        &mut memory_handle,
-        address,
-        size,
-        my_permissions as u32,
-        other_permissions as u32,
-    )?;
+    let mut result_code: u32;
+    let mut memory_handle: u32;
 
+    let my_permissions = my_permissions as u32;
+    let other_permissions = other_permissions as u32;
+
+    asm!(
+        "svc 0x1e",
+        // in("r0") address,
+        in("r1") address,
+        in("r2") size,
+        in("r3") my_permissions,
+        in("r4") other_permissions,
+        lateout("r0") result_code,
+        lateout("r1") memory_handle,
+    );
+
+    ResultCode::from(result_code)?;
     Ok(Handle::new(memory_handle))
 }
 
 pub unsafe fn map_memory_block<'h>(
     handle: WeakHandle<'h>,
     address: usize,
-    my_permissions: mem::MemoryPermission,
-    other_permissions: mem::MemoryPermission,
+    my_permissions: MemoryPermission,
+    other_permissions: MemoryPermission,
 ) -> ResultCode {
     let mut result_code: u32;
     let raw_handle = handle.as_raw();
@@ -263,6 +141,7 @@ pub unsafe fn map_memory_block<'h>(
 pub unsafe fn unmap_memory_block<'h>(handle: WeakHandle<'h>, addr: usize) -> ResultCode {
     let mut result_code: u32;
     let raw_handle = handle.as_raw();
+
     asm!(
         "svc 0x20",
         in("r0") raw_handle,
@@ -273,23 +152,89 @@ pub unsafe fn unmap_memory_block<'h>(handle: WeakHandle<'h>, addr: usize) -> Res
     ResultCode::from(result_code)
 }
 
-pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64> {
-    let mut out: i64 = 0;
-    svcGetSystemInfo(&mut out as *mut i64, sysinfo_type, param)?;
-    Ok(out)
+pub fn close_handle(handle: WeakHandle) -> ResultCode {
+    let result_code: u32;
+    let raw_handle = handle.into_raw();
+
+    unsafe {
+        asm!(
+            "svc 0x23",
+            in("r0") raw_handle,
+            lateout("r0") result_code,
+        );
+    }
+
+    ResultCode::from(result_code)
 }
 
-pub fn sleep_thread(duration: Duration) -> ResultCode {
-    let ns: u64 = duration.as_nanos().try_into().unwrap_or(u64::max_value());
-    unsafe { svcSleepThread(ns) }
+pub fn duplicate_handle(handle: WeakHandle) -> Result<Handle> {
+    let result_code: u32;
+    let raw_handle = handle.into_raw();
+    let raw_handle_dup: u32;
+
+    unsafe {
+        asm!(
+            "svc 0x27",
+            in("r1") raw_handle,
+            lateout("r0") result_code,
+            lateout("r1") raw_handle_dup,
+        );
+
+        ResultCode::from(result_code).and_then(|| Handle::new(raw_handle_dup))
+    }
+}
+
+pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64> {
+    let result_code: u32;
+    let mut out: i64;
+    let mut out_low: u32;
+    let mut out_high: u32;
+
+    asm!(
+        "svc 0x2a",
+        in("r1") sysinfo_type,
+        in("r2") param,
+        lateout("r0") result_code,
+        lateout("r1") out_low,
+        lateout("r2") out_high,
+    );
+
+    ResultCode::from(result_code)?;
+
+    Ok(((out_high as i64) << 32) | out_low as i64)
 }
 
 pub fn connect_to_port(port_name: &str) -> Result<Handle> {
-    let mut out_handle: u32 = 0;
+    let result_code: u32;
+    let mut port_handle: u32;
+    let port_name = port_name.as_ptr();
+
     unsafe {
-        svcConnectToPort(&mut out_handle, port_name.as_ptr())?;
-        Ok(Handle::new(out_handle))
+        asm!(
+            "svc 0x2d",
+            in("r1") port_name,
+            lateout("r0") result_code,
+            lateout("r1") port_handle,
+        );
+
+        ResultCode::from(result_code)?;
+
+        Ok(Handle::new(port_handle))
     }
+}
+
+#[inline]
+pub unsafe fn send_sync_request(handle: WeakHandle, command_buffer: *mut u32) -> Result<*mut u32> {
+    let result_code: u32;
+    let raw_handle = handle.into_raw();
+
+    asm!(
+        "svc 0x32",
+        in("r0") raw_handle,
+        lateout("r0") result_code,
+    );
+
+    ResultCode::from(result_code).and(command_buffer)
 }
 
 pub fn get_resource_limit(process_handle: WeakHandle) -> Result<Handle> {
@@ -308,22 +253,41 @@ pub fn get_resource_limit(process_handle: WeakHandle) -> Result<Handle> {
         )
     }
 
-    ResultCode::from(result_code).map(|| unsafe { Handle::new(out_handle) })
+    ResultCode::from(result_code).and_then(|| unsafe { Handle::new(out_handle) })
 }
 
-pub unsafe fn send_sync_request(handle: WeakHandle, command_buffer: *mut u32) -> Result<*mut u32> {
-    svcSendSyncRequest(handle.as_raw())?;
-    Ok(command_buffer)
+#[derive(Debug)]
+pub enum UserBreakReason {
+    Panic = 0,
+    Assert = 1,
+    User = 2,
+    LoadRo = 3,
+    UnloadRo = 4,
 }
 
-pub fn close_handle(handle: WeakHandle) -> ResultCode {
-    unsafe { svcCloseHandle(handle.as_raw()) }
-}
-
-pub fn duplicate_handle(handle: WeakHandle) -> Result<Handle> {
-    let mut out_handle: u32 = 0;
+pub fn user_break(reason: UserBreakReason) -> ! {
+    let reason = reason as u32;
     unsafe {
-        svcDuplicateHandle(&mut out_handle, handle.as_raw())?;
-        Ok(Handle::new(out_handle))
+        asm!(
+            "svc 0x3c",
+            in("r0") reason,
+        );
     }
+
+    loop {}
+}
+
+#[inline(always)]
+pub(crate) fn output_debug_bytes(bytes: &[u8]) {
+    unsafe {
+        asm!(
+            "svc 0x3d",
+            in("r0") bytes.as_ptr(),
+            in("r1") bytes.len(),
+        );
+    }
+}
+
+pub fn output_debug_string(message: &str) {
+    output_debug_bytes(message.as_bytes())
 }

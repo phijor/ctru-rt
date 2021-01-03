@@ -88,7 +88,7 @@ fn main() {
 
     // Assemble runtime support objects
     Assemble {
-        files: vec!["rsrt0.S".into(), "svc.S".into()],
+        files: vec!["rsrt0.S".into()],
         out_dir: out_dir.clone(),
         libname,
     }

@@ -1,7 +1,4 @@
-use crate::{
-    result::Result,
-    svc::{self, mem},
-};
+use crate::{os::mem, result::Result, svc};
 
 use core::{
     alloc::{Layout, LayoutErr},
@@ -35,10 +32,10 @@ pub(crate) fn init() -> Result<()> {
 
     unsafe {
         let heap_start = svc::control_memory(
+            mem::MemoryOperation::allocate(),
             HEAP_START,
             0x0,
             heap_size(),
-            mem::MemoryOperation::allocate(),
             mem::MemoryPermission::Rw,
         )?;
 
