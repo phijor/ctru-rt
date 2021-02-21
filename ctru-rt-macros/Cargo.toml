@@ -1,0 +1,14 @@
+[package]
+name = "ctru-rt-macros"
+version = "0.1.0"
+authors = ["Philipp Joram <mail@phijor.me>"]
+edition = "2018"
+
+[dependencies]
+quote = "1"
+proc-macro2 = "1"
+syn = { version = "1", features = ["full"] }
+# proc-macro-hack = "0.5"
+
+[lib]
+proc-macro = true

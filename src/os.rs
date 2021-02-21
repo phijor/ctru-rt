@@ -75,6 +75,13 @@ impl Handle {
     pub fn try_duplicate(&self) -> Result<Self> {
         svc::duplicate_handle(self.handle())
     }
+
+    pub fn leak_raw(self) -> u32 {
+        let raw_handle = self.borrow_handle().0;
+        core::mem::forget(self);
+
+        raw_handle
+    }
 }
 
 impl Drop for Handle {
@@ -90,6 +97,26 @@ impl fmt::Debug for Handle {
             Some(h) => f.debug_tuple("Handle").field(&h).finish(),
             None => f.write_str("Handle::invalid()"),
         }
+    }
+}
+
+impl super::svc::FromRegister for Handle {
+    unsafe fn from_register(reg: u32) -> Self {
+        Self::new(reg)
+    }
+}
+
+impl super::svc::IntoRegister for Handle {
+    type Register = u32;
+    unsafe fn into_register(self) -> u32 {
+        self.leak_raw()
+    }
+}
+
+impl super::svc::IntoRegister for WeakHandle<'_> {
+    type Register = u32;
+    unsafe fn into_register(self) -> u32 {
+        self.into_raw()
     }
 }
 
