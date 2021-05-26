@@ -8,7 +8,7 @@ edition = "2018"
 quote = "1"
 proc-macro2 = "1"
 syn = { version = "1", features = ["full"] }
-# proc-macro-hack = "0.5"
 
 [lib]
 proc-macro = true
+test = true

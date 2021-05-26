@@ -1,33 +1,46 @@
 #![no_std]
-#![feature(try_trait)]
+#![feature(try_trait_v2)]
+#![feature(control_flow_enum)]
 #![feature(auto_traits)]
 #![feature(asm)]
+#![feature(const_panic)]
 #![feature(alloc_error_handler, allocator_api)]
+#![feature(new_uninit)]
+#![feature(atomic_from_mut)]
+#![feature(link_llvm_intrinsics)]
+// Allow dead code for now
+#![allow(dead_code)]
 
 pub mod debug;
 pub mod env;
+pub mod graphics;
 pub mod heap;
 pub mod ipc;
 pub mod os;
+pub mod ports;
 pub mod result;
 pub mod services;
 pub mod svc;
+pub mod sync;
+pub mod thread;
 pub mod tls;
 
 extern crate alloc;
 extern crate core;
 
-#[macro_export]
-macro_rules! entry {
-    ($entry: path) => {
-        #[export_name = "main"]
-        pub unsafe fn __main() {
-            let f: fn() = $entry;
+pub use ctru_rt_macros::entry;
 
-            f()
-        }
-    };
-}
+// #[macro_export]
+// macro_rules! entry {
+//     ($entry: path) => {
+//         #[export_name = "main"]
+//         pub unsafe fn __main() {
+//             let f: fn() = $entry;
+//
+//             f()
+//         }
+//     };
+// }
 
 #[no_mangle]
 unsafe extern "C" fn _ctru_rt_start() {
@@ -36,20 +49,21 @@ unsafe extern "C" fn _ctru_rt_start() {
         static mut __bss_end__: u32;
     }
 
-    r0::zero_bss(&mut __bss_start__, &mut __bss_end__);
-    crate::early_debug!(
-        "Zeroed BSS: [{:p}, {:p})",
-        __bss_start__ as *const (),
-        __bss_end__ as *const ()
-    );
+    let bss_start = &mut __bss_start__;
+    let bss_end = &mut __bss_end__;
+    r0::zero_bss(bss_start, bss_end);
+    crate::early_debug!("Zeroed BSS: [{:p}, {:p})", bss_start, bss_end);
 
     crate::heap::init().expect("Failed to initialize heap");
+    crate::early_debug!("Mapped heap.");
+    crate::graphics::vram::init();
+    crate::early_debug!("Mapped VRAM linear memory.");
 
     extern "Rust" {
-        fn main();
+        fn _ctru_rt_entry();
     }
 
-    main();
+    _ctru_rt_entry();
 }
 
 #[doc(hidden)]
@@ -63,3 +77,12 @@ pub fn __aeabi_unwind_cpp_pr1() {}
 
 #[no_mangle]
 pub fn __aeabi_unwind_cpp_pr0() {}
+
+pub mod util {
+    trait EnumCast: Sized {
+        type Value;
+        fn parse_value(value: Self::Value) -> core::result::Result<Self, Self::Value>;
+
+        fn as_value(&self) -> Self::Value;
+    }
+}

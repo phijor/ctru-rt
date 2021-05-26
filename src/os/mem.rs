@@ -1,5 +1,7 @@
 use super::MemoryRegion;
 
+use ctru_rt_macros::EnumCast;
+
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
 pub enum MemoryOperationTarget {
@@ -43,10 +45,15 @@ impl MemoryOperation {
     pub const fn allocate() -> Self {
         Self(MemoryOperationAction::Allocate as u32)
     }
+
+    #[inline]
+    pub const fn linear(self) -> Self {
+        Self(self.0 | 0x10_000)
+    }
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, EnumCast)]
 pub enum MemoryPermission {
     None = 0,
     R = 1,

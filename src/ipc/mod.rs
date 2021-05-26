@@ -5,7 +5,7 @@ use self::reply::ReplyBuffer;
 
 use crate::{os::WeakHandle, result::Result, svc, tls};
 
-use log::debug;
+use log::{debug, trace};
 
 use core::{fmt, ops::Range};
 
@@ -94,6 +94,14 @@ impl<'p, 'h> IpcRequest<'p, 'h> {
 
     #[inline(always)]
     pub fn dispatch(self, client_handle: WeakHandle<'_>) -> Result<Reply<'_>> {
+        self.dispatch_no_parse(client_handle).and_then(Reply::parse)
+    }
+
+    #[inline(always)]
+    pub(crate) fn dispatch_no_parse(
+        self,
+        client_handle: WeakHandle<'_>,
+    ) -> Result<ReplyBuffer<'_>> {
         let mut cmdbuf_writer = CommandBufferWriter::new(get_command_buffer());
 
         let header = {
@@ -108,13 +116,13 @@ impl<'p, 'h> IpcRequest<'p, 'h> {
             IpcHeader::new(self.command_id, normal_param_words, translate_param_words)
         };
 
-        debug!("Dispatching RPC with header {:08x?}", header);
+        trace!("Dispatching RPC with header {:08x?}", header);
 
         cmdbuf_writer.write(header.into());
 
         if let Some(params) = self.params {
             for param in params {
-                debug!("Writing param {:08x?}", param);
+                trace!("Writing param {:08x?}", param);
                 cmdbuf_writer.write(*param);
             }
         }
@@ -147,6 +155,14 @@ impl<'p, 'h> IpcRequest<'p, 'h> {
                         cmdbuf_writer.write(0x20);
                         cmdbuf_writer.write(0x0);
                     }
+                    TranslateParameterSet::StaticBuffer(buf, id) => {
+                        trace!("Writing static buffer (id = {}): {:02x?}", id, buf);
+                        let size = buf.len() as u32;
+                        let id = (id & 0x0f) as u32;
+
+                        cmdbuf_writer.write((size << 14) | (id << 10) | 0x2);
+                        cmdbuf_writer.write(buf.as_ptr() as usize as u32)
+                    }
                 }
             }
         }
@@ -154,29 +170,44 @@ impl<'p, 'h> IpcRequest<'p, 'h> {
         unsafe {
             let reply_buffer =
                 svc::send_sync_request(client_handle, cmdbuf_writer.finish().into_inner())?;
-            Reply::parse(ReplyBuffer::new(reply_buffer))
+            Ok(ReplyBuffer::new(reply_buffer))
         }
     }
+}
+
+#[inline(always)]
+pub fn ipc_dispatch<'h>(
+    service_handle: WeakHandle<'h>,
+    id: u16,
+    params: &[u32],
+    translate_params: &[TranslateParameterSet],
+) -> Result<Reply<'h>> {
+    IpcRequest::command(id)
+        .with_params(params)
+        .with_translate_params(translate_params)
+        .dispatch(service_handle)
 }
 
 pub enum TranslateParameterSet<'h> {
     Handle(&'h [WeakHandle<'h>]),
     HandleRef(&'h [WeakHandle<'h>]),
     ProcessId,
+    StaticBuffer(&'h [u32], u8),
 }
 
 impl TranslateParameterSet<'_> {
     #[inline]
     pub fn size(&self) -> usize {
-        match self {
+        match *self {
             Self::Handle(handles) => 1 + handles.len(),
             Self::HandleRef(handle_refs) => 1 + handle_refs.len(),
             Self::ProcessId => 2,
+            Self::StaticBuffer(_, _) => 2,
         }
     }
 
     fn write_to(&self, cmdbuf_writer: &mut CommandBufferWriter) {
-        match self {
+        match *self {
             Self::Handle(handles) => {
                 cmdbuf_writer.write(
                     TranslationDescriptor::new(handles.len(), HandleTranslationType::Move)
@@ -198,6 +229,13 @@ impl TranslateParameterSet<'_> {
             Self::ProcessId => {
                 cmdbuf_writer.write(0x20);
                 cmdbuf_writer.write(0x0);
+            }
+            Self::StaticBuffer(buf, id) => {
+                let size = buf.len() as u32;
+                let id = (id & 0x0f) as u32;
+
+                cmdbuf_writer.write((size << 14) | (id << 10) | 0x2);
+                cmdbuf_writer.write(buf.as_ptr() as usize as u32)
             }
         }
     }

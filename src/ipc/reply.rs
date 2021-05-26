@@ -1,14 +1,15 @@
 use super::{IpcHeader, TranslationDescriptor, COMMAND_BUFFER_LENGTH};
+use crate::result::{CommonDescription, Level, Module, Summary};
 use crate::{
     os::WeakHandle,
     result::{Result, ResultCode},
 };
 
-use log::debug;
+use log::{debug, trace};
 
 use core::{
     marker::PhantomData,
-    ops::{Index, Range, Try},
+    ops::{Index, Range},
 };
 
 pub(crate) struct ReplyBuffer<'a>(*const u32, *const u32, PhantomData<&'a u32>);
@@ -87,25 +88,33 @@ pub struct Reply<'a> {
 }
 
 impl<'a> Reply<'a> {
-    #[inline]
-    pub(crate) fn parse(mut reply_buffer: ReplyBuffer<'a>) -> Result<Self> {
+    #[inline(always)]
+    pub(crate) fn parse_nofail(mut reply_buffer: ReplyBuffer<'a>) -> (Self, ResultCode) {
         let header = IpcHeader::from(reply_buffer.read());
 
-        debug!("Parsed header: {:x?}", header);
+        trace!("Parsed header: {:x?}", header);
 
-        let values = match header.normal_param_words() {
-            0 => None,
+        let (result_code, values) = match header.normal_param_words() {
+            0 => {
+                debug!("IPC reply contains no result code, assuming failure");
+                (
+                    ResultCode::new(
+                        Level::Info,
+                        Summary::InvalidResultValue,
+                        Module::Application,
+                        CommonDescription::NoData.to_value(),
+                    ),
+                    None,
+                )
+            }
             count => {
-                match ResultCode::from(reply_buffer.read()).into_result() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        debug!("IPC request returned an error: {:08x?}", e);
-                        return Err(e);
-                    }
-                };
+                let result_code = ResultCode::from(reply_buffer.read());
 
-                debug!("Reply contains {} normal parameters", count);
-                Some(reply_buffer.read_range(count.wrapping_sub(1)))
+                trace!("Reply contains {} normal parameters", count);
+                (
+                    result_code,
+                    Some(reply_buffer.read_range(count.wrapping_sub(1))),
+                )
             }
         };
 
@@ -113,14 +122,14 @@ impl<'a> Reply<'a> {
             0 => None,
             1 => None,
             word_size => {
-                debug!("Reply contains {} words of translate parameters", word_size);
+                trace!("Reply contains {} words of translate parameters", word_size);
                 let (header, body) = reply_buffer.read_range(word_size).split_first().unwrap();
                 let descriptor = TranslationDescriptor::from(*header);
-                debug!("translate descriptor: {:08x?}", descriptor);
+                trace!("translate descriptor: {:08x?}", descriptor);
                 let nhandles = descriptor.len() + 1;
                 let handles = &body[0..nhandles];
 
-                debug!("Handles: {:08x?}", handles);
+                trace!("Handles: {:08x?}", handles);
 
                 Some(unsafe {
                     core::slice::from_raw_parts(
@@ -131,13 +140,23 @@ impl<'a> Reply<'a> {
             }
         };
 
-        Ok(Self {
-            command_id: header.command_id(),
-            values: ReplyValues { values },
-            translate_values: ReplyTranslateValues {
-                values: translate_values,
+        (
+            Self {
+                command_id: header.command_id(),
+                values: ReplyValues { values },
+                translate_values: ReplyTranslateValues {
+                    values: translate_values,
+                },
             },
-        })
+            result_code,
+        )
+    }
+
+    #[inline(always)]
+    pub(crate) fn parse(reply_buffer: ReplyBuffer<'a>) -> Result<Self> {
+        let (reply, result_code) = Self::parse_nofail(reply_buffer);
+
+        result_code.and(reply)
     }
 }
 

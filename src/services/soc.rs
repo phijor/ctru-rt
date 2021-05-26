@@ -2,12 +2,15 @@ use super::srv::Srv;
 use crate::{
     heap::PageAlignedBuffer,
     ipc::{IpcRequest, TranslateParameterSet},
-    os::{mem::MemoryPermission, Handle},
+    os::{mem::MemoryPermission, BorrowHandle, Handle},
     result::{ErrorCode as SystemErrorCode, Result as SystemResult},
     svc, tls,
 };
 
 use core::{marker::PhantomData, num::NonZeroU32};
+
+use ctru_rt_macros::EnumCast;
+use log::debug;
 
 #[derive(Debug)]
 pub struct Soc {
@@ -18,16 +21,19 @@ pub struct Soc {
 
 impl Soc {
     pub fn init(srv: &Srv, buffer: PageAlignedBuffer) -> SystemResult<Self> {
+        debug!("Creating memory block for buffer {:?}", buffer);
         let buffer_handle = unsafe {
             svc::create_memory_block(
-                buffer.as_ptr() as usize,
+                buffer.as_ptr().unwrap().as_ptr() as usize,
                 buffer.size(),
                 MemoryPermission::None,
                 MemoryPermission::Rw,
             )?
         };
+        debug!("Got buffer handle: {:?}", buffer_handle);
         let handle = srv.get_service_handle("soc:U")?;
 
+        debug!("Got service handle: {:?}", handle);
         let _reply = IpcRequest::command(0x1)
             .with_params(&[buffer.size() as u32])
             .with_translate_params(&[
@@ -36,6 +42,7 @@ impl Soc {
             ])
             .dispatch(handle.handle())?;
 
+        debug!("Initializes 'soc:U': {:?}", _reply);
         Ok(Self {
             handle,
             buffer,
@@ -45,12 +52,16 @@ impl Soc {
 
     pub fn socket(
         &self,
-        domain: u32,
-        socket_type: u32,
-        protocol: u32,
+        domain: Domain,
+        socket_type: Type,
+        protocol: Protocol,
     ) -> SystemResult<SocketFd<'_>> {
         let reply = IpcRequest::command(0x2)
-            .with_params(&[domain, socket_type, protocol])
+            .with_params(&[
+                domain.to_value(),
+                socket_type.to_value(),
+                protocol.to_value(),
+            ])
             .with_translate_params(&[TranslateParameterSet::ProcessId])
             .dispatch(self.handle.handle())?;
 
@@ -83,6 +94,16 @@ impl Soc {
         unimplemented!()
     }
 
+    pub fn bind(&self, socket: &SocketFd<'_>, addrlen: usize) -> Result<()> {
+        todo!()
+    }
+
+    pub fn gethostid(&self) -> Result<[u8; 4]> {
+        let reply = IpcRequest::command(0x16).dispatch(self.handle.borrow_handle())?;
+
+        Ok(reply.values[0].to_ne_bytes())
+    }
+
     fn shutdown(&self) -> SystemResult<()> {
         IpcRequest::command(0x19)
             .dispatch(self.handle.handle())
@@ -91,14 +112,9 @@ impl Soc {
 
     pub fn reclaim(mut self) -> SystemResult<PageAlignedBuffer> {
         self.shutdown()?;
-        let buffer = unsafe {
-            core::ptr::drop_in_place(&mut self.buffer_handle);
-            core::ptr::drop_in_place(&mut self.handle);
-            let buffer = core::ptr::read(&mut self.buffer);
+        let buffer = core::mem::take(&mut self.buffer);
 
-            core::mem::forget(self);
-            buffer
-        };
+        drop(self);
 
         Ok(buffer)
     }
@@ -110,8 +126,52 @@ impl Drop for Soc {
     }
 }
 
+#[derive(Debug, EnumCast)]
+#[non_exhaustive]
+#[enum_cast(value_type = "u32")]
+pub enum Domain {
+    AfInet = 2,
+}
+
+impl Default for Domain {
+    fn default() -> Self {
+        Self::AfInet
+    }
+}
+
+#[derive(Debug, EnumCast)]
+#[non_exhaustive]
+#[enum_cast(value_type = "u32")]
+pub enum Type {
+    Stream = 1,
+    Datagram = 2,
+}
+
+#[derive(Debug, EnumCast)]
+#[non_exhaustive]
+#[enum_cast(value_type = "u32")]
+pub enum Protocol {
+    Default = 0,
+}
+
+impl Default for Protocol {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
 #[derive(Debug)]
 pub struct PosixReturnValue(u32);
+
+impl PosixReturnValue {
+    pub fn check(ret: u32) -> Result<()> {
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(SocketError::SocketErr(PosixReturnValue(ret)))
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct PosixErrorCode(NonZeroU32);
@@ -135,6 +195,18 @@ pub struct SocketAddress {
 pub enum SocketError {
     SystemErr(SystemErrorCode),
     SocketErr(PosixReturnValue),
+}
+
+impl From<SystemErrorCode> for SocketError {
+    fn from(e: SystemErrorCode) -> Self {
+        SocketError::SystemErr(e)
+    }
+}
+
+impl From<PosixReturnValue> for SocketError {
+    fn from(e: PosixReturnValue) -> Self {
+        SocketError::SocketErr(e)
+    }
 }
 
 type Result<T> = ::core::result::Result<T, SocketError>;

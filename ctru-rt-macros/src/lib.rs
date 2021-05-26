@@ -1,7 +1,12 @@
+mod entry;
+mod enum_cast;
+mod ipc_call;
 mod svc_spec;
 
-use svc_spec::SvcSpec;
-use syn::parse_macro_input;
+use crate::enum_cast::EnumCast;
+use crate::svc_spec::SvcSpec;
+
+use syn::{parse_macro_input, AttributeArgs, DeriveInput, Error, ItemFn};
 
 // use proc_macro2::{Span, TokenStream};
 // use proc_macro_hack::proc_macro_hack;
@@ -228,7 +233,26 @@ use syn::parse_macro_input;
 pub fn svc(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let call_spec = parse_macro_input!(tokens as SvcSpec);
 
-    let output: proc_macro2::TokenStream = call_spec.to_asm_call().expect("Cannot construct svc");
+    let output: proc_macro2::TokenStream = call_spec
+        .to_asm_call()
+        .unwrap_or_else(|err| err.to_compile_error());
 
     output.into()
+}
+
+#[proc_macro_derive(EnumCast, attributes(enum_cast))]
+pub fn enum_cast_impl(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let enum_cast = parse_macro_input!(tokens as EnumCast);
+    enum_cast.emit().into()
+}
+
+#[proc_macro_attribute]
+pub fn entry(
+    args: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let args = parse_macro_input!(args as AttributeArgs);
+    let f = parse_macro_input!(item as ItemFn);
+
+    entry::entry(args, f).into()
 }

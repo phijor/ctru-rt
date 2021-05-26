@@ -84,10 +84,10 @@ macro_rules! early_debug {
         #[cfg(debug_assertions)]
         {
             let write = || {
-                use ::alloc::fmt::Write;
+                use alloc::fmt::Write;
                 use $crate::{debug::FixedSizeBufferWriter, svc::output_debug_bytes};
 
-                let mut buffer = FixedSizeBufferWriter::<128>::new();
+                let mut buffer = FixedSizeBufferWriter::<256>::new();
 
                 let _ = write!(&mut buffer, $fmt, $($args),*);
 
@@ -116,12 +116,19 @@ impl Log for SvcDebugLog {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
+            let level = record.level();
+            let color = match level {
+                Level::Trace => "0",
+                Level::Debug => "37",
+                Level::Info => "32",
+                Level::Warn => "33",
+                Level::Error => "31",
+            };
             output_debug_string(&alloc::fmt::format(format_args!(
-                "[{}] {}({}:{}) - {}",
-                record.level(),
+                "\x1b[0m[\x1b[{};1m{:<5}\x1b[0m] {} - {}",
+                color,
+                level,
                 record.module_path_static().unwrap_or(""),
-                record.file().unwrap_or(""),
-                record.line().unwrap_or(0),
                 record.args()
             )))
         }

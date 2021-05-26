@@ -1,10 +1,11 @@
+use crate::os::reslimit::LimitType;
 use crate::{
     os::{
         mem::{MemoryOperation, MemoryPermission, QueryResult},
         Handle, WeakHandle,
     },
-    result::{Result, ResultCode},
-    sync::ResetType,
+    result::Result,
+    sync::{ArbitrationType, ResetType},
 };
 
 use core::{convert::TryInto, time::Duration};
@@ -27,37 +28,38 @@ impl FromRegister for usize {
     }
 }
 
+impl FromRegister for i32 {
+    unsafe fn from_register(reg: u32) -> Self {
+        reg as i32
+    }
+}
+
 pub trait IntoRegister {
     type Register;
     unsafe fn into_register(self) -> Self::Register;
 }
 
-impl IntoRegister for u32 {
-    type Register = u32;
-    unsafe fn into_register(self) -> u32 {
-        self
+macro_rules! into_register_implicit {
+    ($($t:ty as $into:ty),* $(,)?) => {
+        $(
+            impl IntoRegister for $t {
+                type Register = $into;
+
+                unsafe fn into_register(self) -> Self::Register {
+                    self as Self::Register
+                }
+            }
+        )*
     }
 }
 
-impl IntoRegister for i32 {
-    type Register = i32;
-    unsafe fn into_register(self) -> i32 {
-        self
-    }
-}
-
-impl IntoRegister for usize {
-    type Register = usize;
-    unsafe fn into_register(self) -> usize {
-        self
-    }
-}
-
-impl IntoRegister for bool {
-    type Register = u32;
-    unsafe fn into_register(self) -> u32 {
-        self as u32
-    }
+into_register_implicit! {
+    u32 as u32,
+    i32 as i32,
+    usize as usize,
+    bool as u32,
+    MemoryPermission as u32,
+    unsafe extern "C" fn(usize) as u32,
 }
 
 impl<T> IntoRegister for *mut T {
@@ -82,7 +84,6 @@ pub unsafe fn control_memory(
     permission: MemoryPermission,
 ) -> Result<usize> {
     let op = op.0;
-    let permission = permission as u32;
     let dest_addr = svc!(0x01: (op, addr0, addr1, size, permission) -> usize)?;
     Ok(dest_addr)
 }
@@ -117,22 +118,24 @@ pub unsafe fn create_thread(
     stacktop: *mut u8,
     processor_id: i32,
 ) -> Result<Handle> {
-    let entry_point = entry_point as u32;
-
-    let thread_handle = svc!(0x08: (entry_point, argument, stacktop, processor_id) -> Handle)?;
-    Ok(thread_handle)
+    svc!(0x08: (priority, entry_point, argument, stacktop, processor_id) -> Handle)
 }
 
 pub fn exit_thread() -> ! {
     unsafe { svc!(0x09: () -> !) }
 }
 
-pub fn sleep_thread(duration: Duration) {
-    let (ns_high, ns_low) = into_ns(duration);
+/// Pause the current thread for the specified duration.
+pub fn sleep_thread(duration: Timeout) {
+    let (ns_high, ns_low) = (duration.reg_high(), duration.reg_low());
 
     unsafe {
         let _ = svc!(0x0a: (ns_low, ns_high) -> ());
     }
+}
+
+pub fn get_thread_priority(handle: WeakHandle) -> Result<i32> {
+    unsafe { svc!(0x0b: (_, handle) -> i32) }
 }
 
 pub fn create_mutex(initially_locked: bool) -> Result<Handle> {
@@ -149,16 +152,21 @@ pub fn create_event(reset_type: ResetType) -> Result<Handle> {
     unsafe { svc!(0x17: (reset_type) -> Handle) }
 }
 
+pub fn signal_event(handle: WeakHandle) -> Result<()> {
+    unsafe { svc!(0x18: (handle) -> ()) }
+}
+
+pub fn clear_event(handle: WeakHandle) -> Result<()> {
+    unsafe { svc!(0x19: (handle) -> ()) }
+}
+
 pub unsafe fn create_memory_block(
     address: usize,
     size: usize,
     my_permissions: MemoryPermission,
     other_permissions: MemoryPermission,
 ) -> Result<Handle> {
-    let my_permissions = my_permissions as u32;
-    let other_permissions = other_permissions as u32;
-
-    svc!(0x1e: (_ /*address*/, address, size, my_permissions, other_permissions) -> Handle)
+    svc!(0x1e: (other_permissions, address, size, my_permissions) -> Handle)
 }
 
 pub unsafe fn map_memory_block<'h>(
@@ -167,9 +175,6 @@ pub unsafe fn map_memory_block<'h>(
     my_permissions: MemoryPermission,
     other_permissions: MemoryPermission,
 ) -> Result<()> {
-    let my_permissions = my_permissions as u32;
-    let other_permissions = other_permissions as u32;
-
     svc!(0x1f: (handle, address, my_permissions, other_permissions) -> ())
 }
 
@@ -177,18 +182,42 @@ pub unsafe fn unmap_memory_block<'h>(handle: WeakHandle<'h>, addr: usize) -> Res
     svc!(0x20: (handle, addr) -> ())
 }
 
+pub fn create_address_arbiter() -> Result<Handle> {
+    unsafe { svc!(0x21: () -> Handle) }
+}
+
+pub fn arbitrate_address(
+    handle: WeakHandle,
+    address: usize,
+    arbitration_type: ArbitrationType,
+    value: i32,
+    timeout: Timeout,
+) -> Result<()> {
+    let (ns_low, ns_high) = (timeout.reg_low(), timeout.reg_high());
+    unsafe { svc!(0x22: (handle, address, arbitration_type, value, ns_low, ns_high) -> ()) }
+}
+
 pub fn close_handle(handle: WeakHandle) -> Result<()> {
     unsafe { svc!(0x23: (handle) -> ()) }
 }
 
-pub fn wait_synchronization(handle: WeakHandle, timeout: Duration) -> Result<()> {
-    let (ns_high, ns_low) = into_ns(timeout);
+pub fn wait_synchronization(handle: WeakHandle, timeout: Timeout) -> Result<()> {
+    let (ns_high, ns_low) = (timeout.reg_high(), timeout.reg_low());
 
-    unsafe { svc!(0x24: (handle, ns_high, ns_low) -> ()) }
+    unsafe { svc!(0x24: (handle, _, ns_high, ns_low) -> ()) }
 }
 
 pub fn duplicate_handle(handle: WeakHandle) -> Result<Handle> {
     unsafe { svc!(0x27: (_, handle) -> Handle) }
+}
+
+pub fn get_system_tick_count() -> u64 {
+    let tick_low: u32;
+    let tick_high: u32;
+    unsafe {
+        asm!("svc 0x28", lateout("r0") tick_high, lateout("r1") tick_low);
+    }
+    return (tick_high as u64) << 32 | tick_low as u64;
 }
 
 pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64> {
@@ -209,6 +238,10 @@ pub unsafe fn send_sync_request(handle: WeakHandle, command_buffer: *mut u32) ->
     Ok(command_buffer)
 }
 
+pub fn get_process_id(process_handle: WeakHandle) -> Result<u32> {
+    unsafe { svc!(0x35: (_, process_handle) -> u32) }
+}
+
 pub fn get_resource_limit(process_handle: WeakHandle) -> Result<Handle> {
     let mut out_handle: u32 = 0;
     let out_handle_ptr = &mut out_handle as *mut u32;
@@ -223,6 +256,28 @@ pub fn get_resource_limit(process_handle: WeakHandle) -> Result<Handle> {
     }
 }
 
+pub fn get_resource_limit_values<const N: usize>(
+    limits_handle: WeakHandle,
+    values: &mut [i64; N],
+    limit_types: &[LimitType; N],
+) -> Result<()> {
+    let values = values.as_mut_ptr();
+    let limit_types = limit_types.as_ptr();
+
+    unsafe { svc!(0x39: (values, limits_handle, limit_types, N) -> ()) }
+}
+
+pub fn get_resource_limit_current_values<const N: usize>(
+    limits_handle: WeakHandle,
+    values: &mut [i64; N],
+    limit_types: &[LimitType; N],
+) -> Result<()> {
+    let values = values.as_mut_ptr();
+    let limit_types = limit_types.as_ptr();
+
+    unsafe { svc!(0x3a: (values, limits_handle, limit_types, N) -> ()) }
+}
+
 #[derive(Debug)]
 pub enum UserBreakReason {
     Panic = 0,
@@ -235,6 +290,10 @@ pub enum UserBreakReason {
 pub fn user_break(reason: UserBreakReason) -> ! {
     let reason = reason as u32;
     unsafe { svc!(0x3c: (reason) -> !) }
+    #[allow(unreachable_code)]
+    loop {
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 #[inline(always)]
@@ -250,12 +309,52 @@ pub fn output_debug_string(message: &str) {
     output_debug_bytes(message.as_bytes())
 }
 
-#[inline]
-fn into_ns(duration: Duration) -> (u32, u32) {
-    let ns: u64 = duration.as_nanos().try_into().unwrap_or(u64::max_value());
+pub fn stop_point() {
+    unsafe { asm!("svc 0xff") }
+}
 
-    let ns_low = ns as u32;
-    let ns_high = (ns >> 32) as u32;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Timeout(i64);
 
-    (ns_high, ns_low)
+impl Timeout {
+    pub const fn from_nanoseconds(nanoseconds: i64) -> Self {
+        Self(nanoseconds)
+    }
+
+    pub const fn from_seconds(seconds: i64) -> Self {
+        Self(seconds * 1_000_000_000)
+    }
+
+    pub const fn forever() -> Self {
+        Self::from_nanoseconds(i64::max_value())
+    }
+
+    pub const fn none() -> Self {
+        Self::from_nanoseconds(0)
+    }
+
+    #[inline]
+    pub(crate) const fn reg_high(self) -> u32 {
+        ((self.0 as u64) >> 32) as u32
+    }
+
+    #[inline]
+    pub(crate) const fn reg_low(self) -> u32 {
+        self.0 as u64 as u32
+    }
+}
+
+impl From<Duration> for Timeout {
+    fn from(duration: Duration) -> Self {
+        match duration.as_nanos().try_into() {
+            Ok(ns) => Self::from_nanoseconds(ns),
+            Err(_) => Self::forever(),
+        }
+    }
+}
+
+impl From<i64> for Timeout {
+    fn from(nanoseconds: i64) -> Self {
+        Self::from_nanoseconds(nanoseconds)
+    }
 }

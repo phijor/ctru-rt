@@ -2,7 +2,7 @@ use super::srv::Srv;
 use crate::{
     ipc::IpcRequest,
     os::Handle,
-    result::{ErrorCode, Level, Module, Result, Summary},
+    result::{CommonDescription, ErrorCode, Level, Module, Result, Summary},
 };
 
 #[derive(Debug)]
@@ -47,7 +47,7 @@ impl Ac {
                     Level::Fatal,
                     Summary::InvalidResultValue,
                     Module::Ac,
-                    1023,
+                    CommonDescription::InvalidResultValue.to_value(),
                 ));
             }
         };

@@ -1,15 +1,40 @@
 use proc_macro2::{Span, TokenStream};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::token::Paren;
-use syn::{parenthesized, LitStr, Result, Type, TypeNever, TypeTuple};
-use syn::{Ident, LitInt, Token};
+use syn::{parenthesized, Ident, LitInt, LitStr, Result, Token, Type, TypeNever, TypeTuple};
+use syn::{Attribute, Error};
 
 use quote::{format_ident, quote};
 
 pub enum InputArg {
     Unused(Token![_]),
     Name(Ident),
+    Split(Ident),
+}
+
+impl InputArg {
+    fn parse_split_attr(input: ParseStream) -> Result<Option<()>> {
+        let attributes = input.call(Attribute::parse_outer)?;
+
+        let attr = match attributes.first() {
+            Some(attr) => attr,
+            None => return Ok(None), // No attribute specified
+        };
+
+        let name = attr
+            .path
+            .get_ident()
+            .ok_or_else(|| Error::new(attr.span(), "Empty attribute"))?;
+        match name.to_string().as_str() {
+            "split" => Ok(Some(())),
+            unknown => Err(Error::new(
+                name.span(),
+                &format!(r#"Unknown attribute "{}", expected "split""#, unknown),
+            )),
+        }
+    }
 }
 
 impl Parse for InputArg {
@@ -19,8 +44,38 @@ impl Parse for InputArg {
         if lookahead.peek(Token![_]) {
             Ok(Self::Unused(input.parse()?))
         } else {
-            Ok(Self::Name(input.parse()?))
+            if let Some(_) = Self::parse_split_attr(input)? {
+                Ok(Self::Split(input.parse()?))
+            } else {
+                Ok(Self::Name(input.parse()?))
+            }
         }
+    }
+}
+
+struct InputSpec {
+    arguments: Vec<InputArg>,
+}
+
+impl InputSpec {
+    fn prelude(&self) -> TokenStream {
+        todo!()
+        // let declarations = self
+        //     .arguments
+        //     .iter()
+        //     .filter_map(|argument| match argument {
+        //         InputArg::Split(argument) => {
+        //             let decl = todo! {};
+
+        //             Some(decl)
+        //         }
+        //         _ => None,
+        //     })
+        //     .collect();
+
+        // quote! {
+        //     #(#declarations)
+        // }
     }
 }
 
@@ -83,10 +138,7 @@ impl Parse for OutputSpec {
 
 pub struct SvcSpec {
     number: LitInt,
-    colon: Token![:],
-    in_paren: Paren,
     input: Punctuated<InputArg, Token![,]>,
-    arrow: Token![->],
     output: OutputSpec,
 }
 
@@ -112,10 +164,13 @@ impl SvcSpec {
     }
 
     pub fn to_asm_call(&self) -> Result<TokenStream> {
-        let svc_mnemonic = LitStr::new(
-            &format!("svc {}", self.number.base10_parse::<u8>()?),
-            self.number.span(),
-        );
+        let svc_num = self.number.base10_parse::<u8>().map_err(|_| {
+            Error::new(
+                self.number.span(),
+                "SVC number must be in range 0x00..=0xFF",
+            )
+        })?;
+        let svc_mnemonic = LitStr::new(&format!("svc 0x{:02x}", svc_num), self.number.span());
 
         let inputs = self
             .input
@@ -124,6 +179,7 @@ impl SvcSpec {
             .filter_map(|(register_index, arg)| match arg {
                 InputArg::Unused(_) => None,
                 InputArg::Name(ident) => Some(Self::input_arg(register_index, ident)),
+                InputArg::Split(_) => todo!("Argument splitting not yet implemented"),
             });
 
         let asm_call = match self.output {
@@ -176,23 +232,34 @@ impl SvcSpec {
 impl Parse for SvcSpec {
     fn parse(call_spec: ParseStream) -> Result<Self> {
         let number = call_spec.parse()?;
-        let colon = call_spec.parse()?;
+        let _colon: Token![:] = call_spec.parse()?;
 
         let input;
-        let in_paren = parenthesized!(input in call_spec);
+        let _in_paren = parenthesized!(input in call_spec);
         let input = input.parse_terminated(InputArg::parse)?;
 
-        let arrow = call_spec.parse()?;
+        let _arrow: Token![->] = call_spec.parse()?;
 
         let output = call_spec.parse()?;
 
         Ok(Self {
             number,
-            colon,
-            in_paren,
             input,
-            arrow,
             output,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_input_arg() {
+        use syn::parse_quote;
+
+        let input_arg: InputArg = parse_quote!(foo);
+
+        assert_eq!(input_arg, InputArg::Name("foo"));
     }
 }

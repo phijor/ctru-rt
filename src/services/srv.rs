@@ -5,7 +5,10 @@ use crate::{
     svc,
 };
 
-#[derive(Debug, Copy, Clone)]
+use ctru_rt_macros::EnumCast;
+
+#[derive(Debug, Copy, Clone, EnumCast)]
+#[enum_cast(value_type = "u32")]
 pub enum BlockingPolicy {
     Blocking = 0,
     NonBlocking = 1,
@@ -54,7 +57,7 @@ impl Srv {
         let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
 
         let reply = ipc::IpcRequest::command(0x5)
-            .with_params(&[arg0, arg1, len, self.blocking_policy as u32])
+            .with_params(&[arg0, arg1, len, self.blocking_policy.to_value()])
             .dispatch(self.handle.handle())?;
 
         Ok(unsafe { Handle::own(reply.translate_values[0]) })
@@ -62,15 +65,16 @@ impl Srv {
 }
 
 unsafe fn write_str_param(s: &str) -> ((u32, u32), u32) {
-    let mut buf: [u32; 2] = [0; 2];
-    let byte_buf = core::slice::from_raw_parts_mut(
-        buf.as_mut_ptr() as *mut u8,
-        buf.len() * core::mem::size_of::<u32>(),
-    );
+    union Buf {
+        words: [u32; 2],
+        bytes: [u8; 2 * 4],
+    }
+
+    let mut buf: Buf = Buf { words: [0; 2] };
 
     let s_bytes = s.as_bytes();
+    let n = buf.bytes.len().min(s_bytes.len());
 
-    let n = byte_buf.len().min(s_bytes.len());
-    &byte_buf[..n].copy_from_slice(&s_bytes[..n]);
-    ((buf[0], buf[1]), n as u32)
+    &buf.bytes[..n].copy_from_slice(&s_bytes[..n]);
+    ((buf.words[0], buf.words[1]), n as u32)
 }

@@ -1,17 +1,16 @@
 #![no_std]
 #![no_main]
 
-use core::{fmt::Write, panic::PanicInfo, time::Duration};
+use core::{fmt::Write, panic::PanicInfo};
 
 use log::{error, info};
 
 use ctru_rt::{
     debug::SvcDebugLog,
     entry,
-    os::sharedmem::SharedMemoryMapper,
     result::Result,
     services,
-    svc::{sleep_thread, UserBreakReason},
+    svc::{sleep_thread, Timeout, UserBreakReason},
 };
 
 #[panic_handler]
@@ -21,8 +20,6 @@ fn panic_handler(info: &PanicInfo) -> ! {
 
     ctru_rt::svc::user_break(UserBreakReason::Panic)
 }
-
-entry!(main);
 
 fn run() -> Result<()> {
     let srv = services::srv::Srv::init()?;
@@ -43,20 +40,18 @@ fn run() -> Result<()> {
     // let socket = soc.socket(2, 1, 0)?;
     // let _ = info!("Initialized socket: {:#0x?}", socket);
 
-    let mut mapper = SharedMemoryMapper::new();
-    let hid = services::hid::Hid::init(&srv, &mut mapper)?;
+    let hid = services::hid::Hid::init(&srv)?;
 
     loop {
         let kpad = hid.last_keypad();
 
-        info!("kpad = {:032b}", kpad);
+        info!("kpad = {:?}", kpad);
 
-        sleep_thread(Duration::from_secs(1));
+        sleep_thread(Timeout::from_seconds(1));
     }
-
-    Ok(())
 }
 
+#[entry]
 fn main() {
     let _ = ctru_rt::debug::init_log();
 

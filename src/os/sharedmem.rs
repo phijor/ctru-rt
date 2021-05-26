@@ -1,8 +1,10 @@
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+
 use super::{
     mem::{MemoryPermission, MemoryState, QueryResult},
     Handle,
 };
-use crate::result::{ErrorCode, Level, Module, Result, Summary};
+use crate::result::{CommonDescription, ErrorCode, Level, Module, Result, Summary};
 use crate::svc;
 
 use log::debug;
@@ -16,53 +18,83 @@ pub struct MappedBlock {
 }
 
 impl MappedBlock {
-    pub fn as_slice(&self) -> &[u32] {
-        unsafe { core::slice::from_raw_parts(self.start as *const u32, self.size) }
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn as_ptr(&self) -> *const u32 {
+        self.start as *const u32
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut u32 {
+        self.start as *mut u32
+    }
+
+    pub fn as_slice(&self) -> &[AtomicU32] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self.start as *const AtomicU32,
+                self.size / core::mem::size_of::<u32>(),
+            )
+        }
+    }
+
+    pub unsafe fn as_mut_slice_raw(&mut self) -> &mut [u32] {
+        core::slice::from_raw_parts_mut(
+            self.start as *mut u32,
+            self.size / core::mem::size_of::<u32>(),
+        )
     }
 }
 
 #[derive(Debug)]
 pub struct SharedMemoryMapper {
-    next_candidate: usize,
+    next_candidate: AtomicUsize,
 }
 
 const SHAREDMEM_START: usize = 0x1000_0000;
 const SHAREDMEM_END: usize = 0x1400_0000;
 
-const ERROR_DESC_OUT_OF_MEMORY: u32 = 1011;
+static mut GLOBAL_SHAREDMEMORY_MAPPER: SharedMemoryMapper = SharedMemoryMapper::new();
 
 impl SharedMemoryMapper {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            next_candidate: SHAREDMEM_START,
+            next_candidate: AtomicUsize::new(SHAREDMEM_START),
         }
     }
 
-    pub fn map(&mut self, memory_handle: Handle, size: usize) -> Result<MappedBlock> {
+    pub(crate) fn global() -> &'static Self {
+        // (UN)SAFETY: I *know* global statics are bad.
+        //
+        // This will get a proper implementation once there's support for `RwLock`s.
+        unsafe { &GLOBAL_SHAREDMEMORY_MAPPER }
+    }
+
+    pub fn map(
+        &self,
+        memory_handle: Handle,
+        size: usize,
+        my_permissions: MemoryPermission,
+        other_permissions: MemoryPermission,
+    ) -> Result<MappedBlock> {
         let size = (size + 0xFFF) & !0xFFF;
 
-        let address = self.find_gap(size)?.ok_or(ErrorCode::new(
+        let candidate = self.next_candidate.load(Ordering::Acquire);
+        let address = Self::find_gap(candidate, size)?.ok_or(ErrorCode::new(
             Level::Fatal,
             Summary::OutOfResource,
             Module::Application,
-            ERROR_DESC_OUT_OF_MEMORY,
+            CommonDescription::OutOfMemory.to_value(),
         ))?;
 
-        let next = self.next_candidate.saturating_add(size);
-
-        if next >= SHAREDMEM_END {
-            self.next_candidate = SHAREDMEM_START;
-        } else {
-            self.next_candidate = next;
-        }
+        let next = candidate.saturating_add(size).min(SHAREDMEM_END);
+        self.next_candidate.store(next, Ordering::Release);
 
         debug!(
             "Mapping memory block at {:p}, size = 0x{:x}, handle = {:?}",
             address as *const u32, size, memory_handle,
         );
-
-        let my_permissions = MemoryPermission::R;
-        let other_permissions = MemoryPermission::DontCare;
 
         // TODO: figure out how/when this is sound.
         // Probably never at the moment; we need to tie the lifetime of the mapped block to the
@@ -83,10 +115,10 @@ impl SharedMemoryMapper {
         })
     }
 
-    pub fn unmap(&mut self, block: MappedBlock) -> Result<Handle> {
+    pub fn unmap(&self, block: MappedBlock) -> Result<Handle> {
         unsafe { svc::unmap_memory_block(block.handle.handle(), block.start as usize)? }
 
-        self.next_candidate = block.start;
+        self.next_candidate.store(block.start, Ordering::Release);
 
         Ok(block.handle)
     }
@@ -96,7 +128,7 @@ impl SharedMemoryMapper {
         block.size.checked_sub(offset_in_block)
     }
 
-    fn find_gap_within(&mut self, start: usize, end: usize, size: usize) -> Result<Option<usize>> {
+    fn find_gap_within(start: usize, end: usize, size: usize) -> Result<Option<usize>> {
         let mut candidate_addr = start;
 
         while candidate_addr
@@ -123,10 +155,10 @@ impl SharedMemoryMapper {
         Ok(None)
     }
 
-    fn find_gap(&mut self, size: usize) -> Result<Option<usize>> {
-        match self.find_gap_within(self.next_candidate, SHAREDMEM_END, size)? {
+    fn find_gap(candidate: usize, size: usize) -> Result<Option<usize>> {
+        match Self::find_gap_within(candidate, SHAREDMEM_END, size)? {
             Some(address) => Ok(Some(address)),
-            None => self.find_gap_within(SHAREDMEM_START, self.next_candidate, size),
+            None => Self::find_gap_within(SHAREDMEM_START, candidate, size),
         }
     }
 }

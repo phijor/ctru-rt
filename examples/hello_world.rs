@@ -4,33 +4,39 @@
 use core::time::Duration;
 use core::{fmt::Write, panic::PanicInfo};
 
-use ctru_rt::{debug::SvcDebugLog, entry, env, os};
+use ctru_rt::{
+    debug::{init_log, SvcDebugLog},
+    entry, env, os,
+    result::ResultCode,
+};
+
+use log::info;
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    let mut log = SvcDebugLog::default();
-    let _ = writeln!(log, "{}", info);
+    let mut log = SvcDebugLog;
+    let _ = write!(log, "{}", info);
 
     ctru_rt::svc::exit_process()
 }
 
-entry!(main);
-
+#[entry]
 fn main() {
-    let mut log = SvcDebugLog::default();
+    let _ = init_log().expect("Failed to initialize logger");
 
     let app_id = env::app_id();
     let app_mem_used = os::MemoryRegion::Application
         .used()
         .expect("Failed to get memory information");
-    writeln!(
-        log,
+    info!(
         "Hello, World!, app_id is {:#0x}, app mem used: {:#0x}",
         app_id, app_mem_used
-    )
-    .expect("Failed to write Hello World");
+    );
 
-    let _ = ctru_rt::svc::sleep_thread(Duration::from_secs(2));
+    let rc = ResultCode::from(0x2a07);
+    info!("Some result code: {:?}", rc);
 
-    let _ = writeln!(log, "Bye-bye!");
+    let _ = ctru_rt::svc::sleep_thread(Duration::from_secs(2).into());
+
+    info!("Bye-bye!");
 }

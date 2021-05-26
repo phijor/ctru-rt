@@ -1,17 +1,20 @@
 use crate::{result::Result, svc};
 
-use core::{fmt, marker::PhantomData, num::NonZeroU32, ops::Try};
+use core::{fmt, marker::PhantomData, num::NonZeroU32};
 
 use log::debug;
 use volatile::ReadOnly;
 
 pub mod cfgmem;
 pub mod mem;
+pub mod reslimit;
 pub mod sharedmem;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct WeakHandle<'a>(u32, PhantomData<&'a u32>);
+
+pub(crate) const CLOSED_HANDLE: u32 = 0;
 
 impl WeakHandle<'_> {
     pub(crate) const fn new(raw_handle: u32) -> Self {
@@ -35,21 +38,21 @@ impl WeakHandle<'_> {
     }
 
     pub(crate) const fn invalid() -> Self {
-        Self::new(0)
+        Self::new(CLOSED_HANDLE)
     }
 }
 
 #[repr(transparent)]
 pub struct Handle {
     handle: Option<NonZeroU32>,
-    _unsend_marker: PhantomData<*const u32>,
+    // _unsend_marker: PhantomData<*const u32>,
 }
 
 impl Handle {
     pub unsafe fn new(raw_handle: u32) -> Self {
         Self {
             handle: NonZeroU32::new(raw_handle),
-            _unsend_marker: PhantomData,
+            // _unsend_marker: PhantomData,
         }
     }
 
@@ -57,11 +60,28 @@ impl Handle {
         Self::new(handle.as_raw())
     }
 
-    pub unsafe fn close(&mut self) -> Result<()> {
-        if let Some(handle) = self.handle.take() {
-            svc::close_handle(WeakHandle::new(handle.into())).into_result()
-        } else {
-            Ok(())
+    pub const fn new_closed() -> Self {
+        Self {
+            handle: None,
+            // _unsend_marker: PhantomData,
+        }
+    }
+
+    pub fn take(&mut self) -> Self {
+        Self {
+            handle: self.handle.take(),
+            // _unsend_marker: PhantomData,
+        }
+    }
+
+    pub fn close(&mut self) -> Result<()> {
+        match self.handle {
+            Some(_) => {
+                let result = svc::close_handle(self.borrow_handle());
+                self.handle = None;
+                result
+            }
+            None => Ok(()),
         }
     }
 
@@ -76,18 +96,27 @@ impl Handle {
         svc::duplicate_handle(self.handle())
     }
 
-    pub fn leak_raw(self) -> u32 {
-        let raw_handle = self.borrow_handle().0;
+    pub const fn leak(self) -> u32 {
+        let raw_handle = self.handle;
         core::mem::forget(self);
 
-        raw_handle
+        match raw_handle {
+            Some(h) => h.get(),
+            None => CLOSED_HANDLE,
+        }
     }
 }
 
 impl Drop for Handle {
     fn drop(&mut self) {
-        debug!("Dropping handle {:#08x?}", self);
-        let _ = unsafe { self.close() };
+        debug!("Dropping handle {:08x?}", self);
+        let _ = self.close();
+    }
+}
+
+impl Default for Handle {
+    fn default() -> Self {
+        Self::new_closed()
     }
 }
 
@@ -109,7 +138,7 @@ impl super::svc::FromRegister for Handle {
 impl super::svc::IntoRegister for Handle {
     type Register = u32;
     unsafe fn into_register(self) -> u32 {
-        self.leak_raw()
+        self.leak()
     }
 }
 
@@ -147,5 +176,32 @@ impl MemoryRegion {
     pub fn used(&self) -> Result<u64> {
         const MEM_USED: u32 = 0;
         unsafe { svc::get_system_info(MEM_USED, *self as i32).map(|val| val as u64) }
+    }
+}
+
+pub trait BorrowHandle {
+    fn borrow_handle<'a>(&'a self) -> WeakHandle<'a>;
+}
+
+impl BorrowHandle for Handle {
+    fn borrow_handle(&self) -> WeakHandle {
+        self.handle()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SystemTick(u64);
+
+impl SystemTick {
+    pub fn new(ticks: u64) -> Self {
+        Self(ticks)
+    }
+
+    pub fn now() -> Self {
+        Self(svc::get_system_tick_count())
+    }
+
+    pub const fn count(&self) -> u64 {
+        self.0
     }
 }
