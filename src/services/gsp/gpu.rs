@@ -151,23 +151,60 @@ impl core::ops::Not for FramebufferIndex {
     }
 }
 
-struct FramebufferInfo<'a> {
-    header: &'a AtomicU32,
-    fb_info: &'a mut [u32; 2 * 0x7],
+#[repr(C)]
+struct FramebufferInfoInner {
+    active_framebuffer: u32,
+    fb0_vaddr: u32,
+    fb1_vaddr: u32,
+    stride: u32,
+    format: u32,
+    display_select: u32,
+    unknown: u32,
 }
 
-impl<'a> FramebufferInfo<'a> {
-    fn index(&mut self) -> FramebufferIndex {
-        let header = self.header.load(Ordering::Relaxed).to_le_bytes();
-        FramebufferIndex::from_value(header[0]).expect("Invalid framebuffer index from GSP")
+struct FramebufferInfo {
+    info: *mut u32,
+}
+
+impl FramebufferInfo {
+    fn header(&self) -> &AtomicU32 {
+        unsafe { &*(self.info as *const AtomicU32) }
     }
 
-    fn next_fb_info(&mut self) -> &mut [u32; 0x7] {
-        let next_index = self.index().swap();
-        let fb_info_ptr = self.fb_info.as_mut_ptr();
+    fn load_index(&self, order: Ordering) -> FramebufferIndex {
+        let index = self.header().load(order).to_le_bytes()[0];
+        FramebufferIndex::from_value(index).expect("Invalid framebuffer index from GSP")
+    }
 
+    fn info_at(&self, index: FramebufferIndex) -> *mut FramebufferInfoInner {
         unsafe {
-            core::mem::transmute(fb_info_ptr.offset(isize::from(next_index.to_value()) * 0x7))
+            (self.info.offset(1) as *mut FramebufferInfoInner).offset(index.to_value() as isize)
+        }
+    }
+
+    fn trigger_update(&self, active_fb: FramebufferIndex) {
+        const FB_INDEX: usize = 0;
+        const FB_UPDATE: usize = 1;
+
+        let header = self.header();
+        let mut current: u32 = header.load(Ordering::Acquire);
+        loop {
+            let updated = {
+                let mut updated: [u8; 4] = current.clone().to_le_bytes();
+                updated[FB_INDEX] = active_fb.clone().to_value();
+                updated[FB_UPDATE] = 1;
+                u32::from_le_bytes(updated)
+            };
+
+            match header.compare_exchange_weak(
+                current,
+                updated,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(new) => current = new,
+            }
         }
     }
 
@@ -178,38 +215,30 @@ impl<'a> FramebufferInfo<'a> {
         fb0: *const u8,
         fb1: *const u8,
         stride: u32,
-        mode: u32,
+        format: u32,
     ) {
-        let fb_info = self.next_fb_info();
-        let active_fb = active_fb.to_value();
-        fb_info[0] = u32::from(active_fb);
-        fb_info[1] = fb0 as u32;
-        fb_info[2] = fb1 as u32;
-        fb_info[3] = stride;
-        fb_info[4] = mode;
-        fb_info[5] = u32::from(active_fb);
-        fb_info[6] = 0;
-        core::sync::atomic::fence(Ordering::Release);
+        debug!("Updating framebuffer: active = {:?}, fb0 = {:p}, fb1 = {:p}, stride = {}, format = {:b}", active_fb, fb0, fb1, stride, format);
+        {
+            let active_fb = u32::from(active_fb.to_value());
+            let fb_info = FramebufferInfoInner {
+                active_framebuffer: active_fb,
+                fb0_vaddr: fb0 as u32,
+                fb1_vaddr: fb1 as u32,
+                stride,
+                format,
+                display_select: active_fb,
+                unknown: 0,
+            };
 
-        const FB_INDEX: usize = 0;
-        const FB_UPDATE: usize = 1;
-
-        let mut header = self.header.load(Ordering::Acquire);
-        loop {
-            let mut status = header.to_le_bytes();
-            status[FB_INDEX] = active_fb;
-            status[FB_UPDATE] = 1;
-
-            match self.header.compare_exchange_weak(
-                header,
-                u32::from_le_bytes(status),
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => break,
-                Err(new) => header = new,
+            let next_index = self.load_index(Ordering::Acquire).swap();
+            unsafe {
+                self.info_at(next_index).write(fb_info);
             }
+
+            core::sync::atomic::fence(Ordering::Release);
         }
+
+        self.trigger_update(active_fb)
     }
 }
 
@@ -315,6 +344,20 @@ impl Sharedmem {
         }
     }
 
+    unsafe fn framebuffer_info_for(&mut self, screen: Screen) -> FramebufferInfo {
+        const INFO_BASE: isize = 0x80;
+        const SIZE: isize = 0x20;
+        const SCREEN_OFFSET: usize = 0x10;
+
+        let base = self.shared_memory.as_mut_ptr().offset(INFO_BASE);
+        let screen_offset = (screen.to_value() * SCREEN_OFFSET) as isize;
+        let info = base
+            .offset(self.gsp_module_thread_index as isize * SIZE)
+            .offset(screen_offset);
+
+        FramebufferInfo { info }
+    }
+
     pub fn present_buffer(
         &mut self,
         screen: Screen,
@@ -324,16 +367,7 @@ impl Sharedmem {
         stride: u32,
         mode: u32,
     ) {
-        let sharedmem = unsafe {
-            &mut self.shared_memory.as_mut_slice_raw()[0x80
-                + (self.gsp_module_thread_index as usize * 0x20)
-                + (screen.to_value() as usize * 0x10)..][..0xd]
-        };
-        let (header, fb_info) = sharedmem.split_first_mut().unwrap();
-        let mut fb_info = FramebufferInfo {
-            header: AtomicU32::from_mut(header),
-            fb_info: unsafe { core::mem::transmute(fb_info.as_mut_ptr()) },
-        };
+        let mut fb_info = unsafe { self.framebuffer_info_for(screen) };
 
         fb_info.update(active_fb, fb0, fb1, stride, mode)
     }
