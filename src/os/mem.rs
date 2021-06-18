@@ -48,7 +48,7 @@ impl MemoryOperation {
 
     #[inline]
     pub const fn linear(self) -> Self {
-        Self(self.0 | 0x10_000)
+        Self(self.0 | MemoryOperationTarget::Linear as u32)
     }
 }
 
