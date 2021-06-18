@@ -150,6 +150,7 @@ impl OsMutex {
 }
 
 unsafe impl RawMutex for OsMutex {
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self = Self {
         handle: AtomicHandle::new_closed(),
     };

@@ -109,7 +109,7 @@ pub fn exit_process() -> ! {
     unsafe { svc!(0x03: () -> !) }
 }
 
-/// SAFETY:
+/// # SAFETY:
 ///     * `stacktop` must be aligned to 8 bytes
 pub unsafe fn create_thread(
     priority: i32,
@@ -217,7 +217,7 @@ pub fn get_system_tick_count() -> u64 {
     unsafe {
         asm!("svc 0x28", lateout("r0") tick_high, lateout("r1") tick_low);
     }
-    return (tick_high as u64) << 32 | tick_low as u64;
+    (tick_high as u64) << 32 | tick_low as u64
 }
 
 pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64> {
