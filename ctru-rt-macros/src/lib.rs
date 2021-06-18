@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod entry;
 mod enum_cast;
 mod ipc_call;
@@ -6,7 +8,7 @@ mod svc_spec;
 use crate::enum_cast::EnumCast;
 use crate::svc_spec::SvcSpec;
 
-use syn::{parse_macro_input, AttributeArgs, DeriveInput, Error, ItemFn};
+use syn::{parse_macro_input, AttributeArgs, ItemFn};
 
 // use proc_macro2::{Span, TokenStream};
 // use proc_macro_hack::proc_macro_hack;
