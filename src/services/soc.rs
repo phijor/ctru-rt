@@ -1,7 +1,7 @@
 use super::srv::Srv;
 use crate::{
     heap::PageAlignedBuffer,
-    ipc::{IpcRequest, TranslateParameterSet},
+    ipc::{IpcParameter, IpcRequest, IpcResult, ThisProcessId},
     os::{mem::MemoryPermission, BorrowHandle, Handle},
     result::{ErrorCode as SystemErrorCode, Result as SystemResult},
     svc, tls,
@@ -35,14 +35,12 @@ impl Soc {
 
         debug!("Got service handle: {:?}", handle);
         let _reply = IpcRequest::command(0x1)
-            .with_params(&[buffer.size() as u32])
-            .with_translate_params(&[
-                TranslateParameterSet::ProcessId,
-                TranslateParameterSet::HandleRef(&[buffer_handle.handle()]),
-            ])
-            .dispatch(handle.handle())?;
+            .parameter(buffer.size())
+            .translate_parameter(ThisProcessId)
+            .translate_parameter(buffer_handle.borrow_handle())
+            .dispatch(handle.borrow_handle())?;
 
-        debug!("Initializes 'soc:U': {:?}", _reply);
+        debug!("Initialized!");
         Ok(Self {
             handle,
             buffer,
@@ -56,26 +54,27 @@ impl Soc {
         socket_type: Type,
         protocol: Protocol,
     ) -> SystemResult<SocketFd<'_>> {
-        let reply = IpcRequest::command(0x2)
-            .with_params(&[
+        let mut reply = IpcRequest::command(0x2)
+            .parameters(&[
                 domain.to_value(),
                 socket_type.to_value(),
                 protocol.to_value(),
             ])
-            .with_translate_params(&[TranslateParameterSet::ProcessId])
+            .translate_parameter(ThisProcessId)
             .dispatch(self.handle.handle())?;
 
-        Ok(SocketFd::own(reply.values[0]))
+        Ok(reply.read_result())
     }
 
     pub fn listen(&self, fd: &SocketFd<'_>, backlog: isize) -> Result<()> {
-        let reply = IpcRequest::command(0x3)
-            .with_params(&[fd.0, backlog as u32])
-            .with_translate_params(&[TranslateParameterSet::ProcessId])
+        let mut reply = IpcRequest::command(0x3)
+            .parameter(fd)
+            .parameter(backlog as u32)
+            .translate_parameter(ThisProcessId)
             .dispatch(self.handle.handle())
             .map_err(SocketError::SystemErr)?;
 
-        SocketError::into_result(PosixReturnValue(reply.values[0]))
+        SocketError::into_result(reply.read_result())
     }
 
     pub fn accept(&self, fd: &SocketFd<'_>) -> SystemResult<SocketAddress> {
@@ -86,9 +85,10 @@ impl Soc {
 
         buffer_descriptors.set(0, &mut address_data);
 
-        let reply = IpcRequest::command(0x4)
-            .with_params(&[fd.0, address_data.len() as u32])
-            .with_translate_params(&[TranslateParameterSet::ProcessId])
+        let _reply = IpcRequest::command(0x4)
+            .parameter(fd)
+            .parameter(address_data.len())
+            .translate_parameter(ThisProcessId)
             .dispatch(self.handle.handle())?;
 
         unimplemented!()
@@ -99,9 +99,9 @@ impl Soc {
     }
 
     pub fn gethostid(&self) -> Result<[u8; 4]> {
-        let reply = IpcRequest::command(0x16).dispatch(self.handle.borrow_handle())?;
+        let mut reply = IpcRequest::command(0x16).dispatch(self.handle.borrow_handle())?;
 
-        Ok(reply.values[0].to_ne_bytes())
+        Ok(reply.read_word().to_ne_bytes())
     }
 
     fn shutdown(&self) -> SystemResult<()> {
@@ -163,6 +163,12 @@ impl Default for Protocol {
 #[derive(Debug)]
 pub struct PosixReturnValue(u32);
 
+impl IpcResult for PosixReturnValue {
+    fn decode(result: u32) -> Self {
+        Self(result)
+    }
+}
+
 impl PosixReturnValue {
     pub fn check(ret: u32) -> Result<()> {
         if ret == 0 {
@@ -179,9 +185,15 @@ pub struct PosixErrorCode(NonZeroU32);
 #[derive(Debug)]
 pub struct SocketFd<'s>(u32, PhantomData<&'s u32>);
 
-impl SocketFd<'_> {
-    fn own(raw_fd: u32) -> Self {
-        Self(raw_fd, PhantomData)
+impl<'s> IpcParameter for &SocketFd<'s> {
+    fn encode(&self) -> u32 {
+        self.0
+    }
+}
+
+impl<'s> IpcResult for SocketFd<'s> {
+    fn decode(result: u32) -> Self {
+        SocketFd(result, PhantomData)
     }
 }
 

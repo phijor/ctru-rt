@@ -76,6 +76,13 @@ impl Default for ErrorInfo {
 }
 
 impl ErrorInfo {
+    const PARAMETER_SIZE: usize = size_of::<Self>() / size_of::<u32>();
+
+    fn as_words(&self) -> &[u32; Self::PARAMETER_SIZE] {
+        let this: &Self = self; // Prevent deref-coercion doing weird stuff
+        unsafe { core::mem::transmute(this) }
+    }
+
     fn as_slice(&self) -> &[u32] {
         // SAFETY: ErrorInfo is aligned to 4 bytes
         unsafe {
@@ -141,7 +148,7 @@ impl ErrF {
 
     pub fn throw(&self, error: &ErrorInfo) -> Result<()> {
         let _ = IpcRequest::command(0x1)
-            .with_params(error.as_slice())
+            .parameters(error.as_words())
             .dispatch(self.port.borrow_handle())?;
 
         Ok(())

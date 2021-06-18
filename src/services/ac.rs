@@ -36,9 +36,9 @@ impl Ac {
     }
 
     pub fn wifi_status(&self) -> Result<WifiStatus> {
-        let result = IpcRequest::command(0xd).dispatch(self.handle.handle())?;
+        let mut reply = IpcRequest::command(0xd).dispatch(self.handle.handle())?;
 
-        let status = match result.values[0] {
+        let status = match reply.read_result::<u32>() {
             0 => WifiStatus::NoConnection,
             1 => WifiStatus::Old3dsConnection,
             2 => WifiStatus::New3dsConnection,

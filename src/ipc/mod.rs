@@ -1,12 +1,17 @@
+//! # Inter-process communication
 mod reply;
+mod request;
 
-pub use self::reply::Reply;
-use self::reply::ReplyBuffer;
+use self::reply::CommandBufferReader;
+use self::request::CommandBufferWriter;
+pub(crate) use self::request::IpcRequest;
 
-use crate::{os::WeakHandle, result::Result, svc, tls};
+use crate::os::{Handle, WeakHandle};
+use crate::result::{ResultCode, ResultValue};
+use crate::tls;
 
-use log::{debug, trace};
-
+use core::convert::TryFrom;
+use core::mem::MaybeUninit;
 use core::{fmt, ops::Range};
 
 #[derive(Copy, Clone)]
@@ -60,194 +65,18 @@ impl fmt::Debug for IpcHeader {
             .finish()
     }
 }
-
-pub struct IpcRequest<'p, 'h> {
-    command_id: u16,
-    params: Option<&'p [u32]>,
-    translate_params: Option<&'h [TranslateParameterSet<'h>]>,
-}
-
-impl<'p, 'h> IpcRequest<'p, 'h> {
-    #[inline]
-    pub fn command(id: u16) -> Self {
-        Self {
-            command_id: id,
-            params: None,
-            translate_params: None,
-        }
-    }
-
-    #[inline]
-    pub fn with_params(self, params: &'p [u32]) -> Self {
-        Self {
-            params: Some(params),
-            ..self
-        }
-    }
-
-    #[inline]
-    pub fn with_translate_params(self, translate_params: &'h [TranslateParameterSet<'h>]) -> Self {
-        Self {
-            translate_params: Some(translate_params),
-            ..self
-        }
-    }
-
-    #[inline(always)]
-    pub fn dispatch(self, client_handle: WeakHandle<'_>) -> Result<Reply<'_>> {
-        self.dispatch_no_parse(client_handle).and_then(Reply::parse)
-    }
-
-    #[inline(always)]
-    pub(crate) fn dispatch_no_parse(
-        self,
-        client_handle: WeakHandle<'_>,
-    ) -> Result<ReplyBuffer<'_>> {
-        let mut cmdbuf_writer = CommandBufferWriter::new(get_command_buffer());
-
-        let header = {
-            let normal_param_words = self.params.map(|p| p.len()).unwrap_or(0);
-            let translate_param_words = self
-                .translate_params
-                .map(|tp| {
-                    tp.iter()
-                        .fold(0, |total, param_set| total + param_set.size())
-                })
-                .unwrap_or(0);
-            IpcHeader::new(self.command_id, normal_param_words, translate_param_words)
-        };
-
-        trace!("Dispatching RPC with header {:08x?}", header);
-
-        cmdbuf_writer.write(header.into());
-
-        if let Some(params) = self.params {
-            for param in params {
-                trace!("Writing param {:08x?}", param);
-                cmdbuf_writer.write(*param);
-            }
-        }
-
-        if let Some(translate_params) = self.translate_params {
-            for translate_param in translate_params.into_iter() {
-                match translate_param {
-                    TranslateParameterSet::Handle(handles) => {
-                        cmdbuf_writer.write(
-                            TranslationDescriptor::new(handles.len(), HandleTranslationType::Move)
-                                .into_raw(),
-                        );
-                        for handle in handles.into_iter() {
-                            cmdbuf_writer.write(handle.as_raw());
-                        }
-                    }
-                    TranslateParameterSet::HandleRef(handle_refs) => {
-                        cmdbuf_writer.write(
-                            TranslationDescriptor::new(
-                                handle_refs.len(),
-                                HandleTranslationType::Clone,
-                            )
-                            .into_raw(),
-                        );
-                        for handle in handle_refs.into_iter() {
-                            cmdbuf_writer.write(handle.as_raw());
-                        }
-                    }
-                    TranslateParameterSet::ProcessId => {
-                        cmdbuf_writer.write(0x20);
-                        cmdbuf_writer.write(0x0);
-                    }
-                    TranslateParameterSet::StaticBuffer(buf, id) => {
-                        trace!("Writing static buffer (id = {}): {:02x?}", id, buf);
-                        let size = buf.len() as u32;
-                        let id = (id & 0x0f) as u32;
-
-                        cmdbuf_writer.write((size << 14) | (id << 10) | 0x2);
-                        cmdbuf_writer.write(buf.as_ptr() as usize as u32)
-                    }
-                }
-            }
-        }
-
-        unsafe {
-            let reply_buffer =
-                svc::send_sync_request(client_handle, cmdbuf_writer.finish().into_inner())?;
-            Ok(ReplyBuffer::new(reply_buffer))
-        }
-    }
-}
-
-#[inline(always)]
-pub fn ipc_dispatch<'h>(
-    service_handle: WeakHandle<'h>,
-    id: u16,
-    params: &[u32],
-    translate_params: &[TranslateParameterSet],
-) -> Result<Reply<'h>> {
-    IpcRequest::command(id)
-        .with_params(params)
-        .with_translate_params(translate_params)
-        .dispatch(service_handle)
-}
-
-pub enum TranslateParameterSet<'h> {
-    Handle(&'h [WeakHandle<'h>]),
-    HandleRef(&'h [WeakHandle<'h>]),
-    ProcessId,
-    StaticBuffer(&'h [u32], u8),
-}
-
-impl TranslateParameterSet<'_> {
-    #[inline]
-    pub fn size(&self) -> usize {
-        match *self {
-            Self::Handle(handles) => 1 + handles.len(),
-            Self::HandleRef(handle_refs) => 1 + handle_refs.len(),
-            Self::ProcessId => 2,
-            Self::StaticBuffer(_, _) => 2,
-        }
-    }
-
-    fn write_to(&self, cmdbuf_writer: &mut CommandBufferWriter) {
-        match *self {
-            Self::Handle(handles) => {
-                cmdbuf_writer.write(
-                    TranslationDescriptor::new(handles.len(), HandleTranslationType::Move)
-                        .into_raw(),
-                );
-                for handle in handles.into_iter() {
-                    cmdbuf_writer.write(handle.as_raw());
-                }
-            }
-            Self::HandleRef(handle_refs) => {
-                cmdbuf_writer.write(
-                    TranslationDescriptor::new(handle_refs.len(), HandleTranslationType::Clone)
-                        .into_raw(),
-                );
-                for handle in handle_refs.into_iter() {
-                    cmdbuf_writer.write(handle.as_raw());
-                }
-            }
-            Self::ProcessId => {
-                cmdbuf_writer.write(0x20);
-                cmdbuf_writer.write(0x0);
-            }
-            Self::StaticBuffer(buf, id) => {
-                let size = buf.len() as u32;
-                let id = (id & 0x0f) as u32;
-
-                cmdbuf_writer.write((size << 14) | (id << 10) | 0x2);
-                cmdbuf_writer.write(buf.as_ptr() as usize as u32)
-            }
-        }
-    }
-}
-
 const COMMAND_BUFFER_LENGTH: usize = 0x80;
 
 #[derive(Debug)]
-pub struct CommandBuffer(*mut u32);
+struct CommandBuffer(*mut u32);
 
 impl CommandBuffer {
+    #[inline]
+    pub(crate) fn get() -> Self {
+        let command_buffer = tls::get_thread_local_storage().command_buffer();
+        Self(command_buffer)
+    }
+
     pub(crate) const fn start(&self) -> *mut u32 {
         self.0
     }
@@ -258,100 +87,206 @@ impl CommandBuffer {
             end: unsafe { self.start().add(COMMAND_BUFFER_LENGTH) },
         }
     }
-}
 
-struct CommandBufferWriter {
-    buf: CommandBuffer,
-    end_ptr: *mut u32,
-}
-
-impl CommandBufferWriter {
-    #[inline]
-    pub(crate) fn write(&mut self, arg: u32) {
-        if self.buf.range().contains(&(self.end_ptr as *const u32)) {
-            unsafe {
-                self.end_ptr.write(arg);
-                self.end_ptr = self.end_ptr.add(1);
-            }
-        } else {
-            panic!(
-                "Detected attempt to access command buffer out of bounds: {:?} is outside of {:?}",
-                self.end_ptr,
-                self.buf.range()
-            )
-        }
-    }
-
-    pub(crate) const fn new(buf: CommandBuffer) -> Self {
-        let end_ptr = buf.start();
-        Self { buf, end_ptr }
-    }
-
-    pub(crate) const fn finish(self) -> CommandBuffer {
-        self.buf
-    }
-}
-
-impl CommandBuffer {
     pub(crate) fn into_inner(self) -> *mut u32 {
         self.0
     }
 }
 
-#[inline]
-pub fn get_command_buffer() -> CommandBuffer {
-    let command_buffer = tls::get_thread_local_storage().command_buffer();
-    CommandBuffer(command_buffer)
-}
+#[doc(hidden)]
+pub(self) mod state {
+    pub(crate) trait State {}
 
-#[derive(Debug, Copy, Clone)]
-enum HandleTranslationType {
-    Clone = 0,
-    Move = 1,
-}
-#[derive(Copy, Clone)]
-struct TranslationDescriptor(u32);
+    macro_rules! state {
+        ($name: ident) => {
+            pub(crate) struct $name;
 
-impl TranslationDescriptor {
-    pub const fn new(len: usize, handle_translation: HandleTranslationType) -> Self {
-        Self((((len as isize) - 1) as u32) << 26 | (handle_translation as u32) << 4)
-    }
-
-    pub const fn len(&self) -> usize {
-        (self.0 >> 26) as usize
-    }
-
-    pub const fn handle_translation_type(&self) -> HandleTranslationType {
-        if ((self.0 >> 4) & 0b1) == 0 {
-            HandleTranslationType::Clone
-        } else {
-            HandleTranslationType::Move
+            impl State for $name {}
+        };
+        ($($name: ident),+) => {
+            $(state!($name);)*
         }
     }
 
-    pub const fn into_raw(self) -> u32 {
-        self.0
+    state!(Normal, Translate);
+}
+
+pub(crate) trait IpcParameter {
+    #[doc(hidden)]
+    fn encode(&self) -> u32;
+}
+
+pub(crate) trait IpcResult {
+    #[doc(hidden)]
+    fn decode(result: u32) -> Self;
+}
+
+pub(crate) trait TranslateParameter {
+    #[doc(hidden)]
+    fn encode(self, cmdbuf: &mut CommandBufferWriter);
+}
+
+pub(crate) trait TranslateResult {
+    #[doc(hidden)]
+    unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self;
+}
+
+impl IpcParameter for u32 {
+    fn encode(&self) -> u32 {
+        *self
     }
 }
 
-impl From<TranslationDescriptor> for u32 {
-    fn from(descriptor: TranslationDescriptor) -> Self {
-        descriptor.into_raw()
+impl IpcResult for u32 {
+    fn decode(result: u32) -> Self {
+        result
     }
 }
 
-impl From<u32> for TranslationDescriptor {
-    fn from(desc: u32) -> Self {
-        Self(desc)
+impl IpcParameter for usize {
+    fn encode(&self) -> u32 {
+        *self as u32
     }
 }
 
-impl fmt::Debug for TranslationDescriptor {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("TranslationDescriptor")
-            .field("raw", &self.0)
-            .field("len", &self.len())
-            .field("handle_translation_type", &self.handle_translation_type())
-            .finish()
+impl IpcParameter for ResultCode {
+    fn encode(&self) -> u32 {
+        self.value()
+    }
+}
+
+impl IpcResult for ResultCode {
+    fn decode(result: u32) -> Self {
+        ResultCode::from(result)
+    }
+}
+
+const TYPE_HANDLE: u32 = 0 << 1;
+const TYPE_STATIC_BUFFER: u32 = 1 << 1;
+
+const FLAG_MOVE_HANDLE: u32 = 1 << 4;
+const FLAG_REPLACE_PID: u32 = 1 << 5;
+
+impl TranslateParameter for Handle {
+    #[inline]
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        let handle: [Handle; 1] = unsafe { core::mem::transmute(self) };
+        handle.encode(cmdbuf)
+    }
+}
+
+impl<const N: usize> TranslateParameter for [Handle; N] {
+    #[inline]
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        if N == 0 {
+            return;
+        }
+
+        let header = (N as u32 - 1) << 26 | FLAG_MOVE_HANDLE | TYPE_HANDLE;
+        cmdbuf.write(header);
+
+        for handle in self {
+            cmdbuf.write(handle.leak())
+        }
+    }
+}
+
+impl<const N: usize> TranslateResult for [Handle; N] {
+    #[inline]
+    unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self {
+        if N == 0 {
+            const CLOSED: Handle = Handle::new_closed();
+            return [CLOSED; N];
+        }
+
+        let header = cmdbuf.read();
+        let num_handles = (header >> 26) + 1;
+        debug_assert_eq!(num_handles, N as u32);
+
+        let mut handles = MaybeUninit::<Self>::uninit();
+
+        for i in 0..N {
+            let handles = &mut *handles.as_mut_ptr();
+            handles[i] = Handle::new(cmdbuf.read());
+        }
+
+        handles.assume_init()
+    }
+}
+
+impl TranslateResult for Handle {
+    unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self {
+        let header = cmdbuf.read();
+        let num_handles = (header >> 26) + 1;
+        debug_assert_eq!(num_handles, 1);
+
+        Self::new(cmdbuf.read())
+    }
+}
+
+impl<'h, const N: usize> TranslateParameter for [WeakHandle<'h>; N] {
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        if N == 0 {
+            return;
+        }
+
+        let header = (N as u32 - 1) << 26 | TYPE_HANDLE;
+        cmdbuf.write(header);
+
+        for handle in self {
+            cmdbuf.write(handle.as_raw())
+        }
+    }
+}
+
+impl<'h> TranslateParameter for WeakHandle<'h> {
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        let header = TYPE_HANDLE;
+        cmdbuf.write(header);
+        cmdbuf.write(self.as_raw())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ThisProcessId;
+
+impl TranslateParameter for ThisProcessId {
+    #[inline]
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        const HEADER: u32 = FLAG_REPLACE_PID | TYPE_HANDLE;
+        const PLACEHOLDER: u32 = 0x0;
+        cmdbuf.write(HEADER);
+        cmdbuf.write(PLACEHOLDER);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct StaticBuffer<'buf> {
+    source: &'buf [u32],
+    target_id: u8,
+}
+
+impl<'buf> StaticBuffer<'buf> {
+    pub(crate) fn new(source: &'buf [u32], target_id: u8) -> Self {
+        Self { source, target_id }
+    }
+}
+
+impl TranslateParameter for StaticBuffer<'_> {
+    #[inline]
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        let index = self.target_id as u32;
+        if index >= 16 {
+            panic!("Static buffer target index must be in 0..16, not {}", index);
+        }
+
+        let size: u32 = u16::try_from(self.source.len())
+            .expect("Static buffer length must fit 16 bits")
+            .into();
+
+        let header = (size << 14) | (index << 10) | TYPE_STATIC_BUFFER;
+
+        cmdbuf.write(header);
+        cmdbuf.write(self.source.as_ptr() as u32)
     }
 }

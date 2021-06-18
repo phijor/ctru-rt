@@ -1,191 +1,95 @@
-use super::{IpcHeader, TranslationDescriptor, COMMAND_BUFFER_LENGTH};
-use crate::result::{CommonDescription, Level, Module, Summary};
-use crate::{
-    os::WeakHandle,
-    result::{Result, ResultCode},
-};
+use super::{state, CommandBuffer, IpcResult, TranslateResult};
+use crate::ipc::IpcHeader;
+use crate::os::Handle;
 
-use log::{debug, trace};
+use core::marker::PhantomData;
 
-use core::{
-    marker::PhantomData,
-    ops::{Index, Range},
-};
+use log::trace;
 
-pub(crate) struct ReplyBuffer<'a>(*const u32, *const u32, PhantomData<&'a u32>);
+pub(crate) struct CommandBufferReader {
+    cmdbuf: CommandBuffer,
+    read_ptr: *const u32,
+}
 
-impl<'a> ReplyBuffer<'a> {
+impl CommandBufferReader {
     pub(crate) const unsafe fn new(buf: *const u32) -> Self {
-        Self(buf, buf, PhantomData)
-    }
-
-    pub(crate) const fn start(&self) -> *const u32 {
-        self.0
-    }
-
-    pub(crate) fn end(&self) -> *const u32 {
-        unsafe { self.0.add(COMMAND_BUFFER_LENGTH) }
-    }
-
-    pub(crate) fn range(&self) -> Range<*const u32> {
-        Range {
-            start: self.start(),
-            end: self.end(),
+        Self {
+            cmdbuf: CommandBuffer(buf as *mut u32),
+            read_ptr: buf,
         }
     }
 
-    pub(crate) const fn read_ptr(&self) -> *const u32 {
-        self.1
+    pub(crate) const fn start(&self) -> *const u32 {
+        self.cmdbuf.start()
     }
 
-    unsafe fn advance_read_ptr(&mut self, offset: usize) {
-        self.1 = self.1.add(offset)
+    pub(crate) fn pos(&self) -> usize {
+        unsafe { self.read_ptr.offset_from(self.start()) as usize }
     }
 
     #[inline]
     pub(crate) fn read(&mut self) -> u32 {
-        if self.range().contains(&self.read_ptr()) {
+        let range = self.cmdbuf.range();
+        if range.contains(&self.read_ptr) {
             unsafe {
-                let value = self.read_ptr().read();
-                self.advance_read_ptr(1);
+                let value = self.read_ptr.read();
+                trace!("cmdbuf[{}] = 0x{:08x}", self.pos(), value);
+                self.read_ptr = self.read_ptr.add(1);
                 value
             }
         } else {
             panic!(
-                "Detected attempt to read past the end of the result buffer: {:?} is past the end of {:?}", 
-                self.read_ptr(), self.range()
+                "Detected attempt to read past the end of command buffer: {:?} is past the end of {:?}",
+                self.read_ptr, range,
             )
+        }
+    }
+}
+
+pub(crate) struct IpcReply<S: state::State = state::Normal> {
+    cmdbuf: CommandBufferReader,
+    _state: PhantomData<S>,
+}
+
+impl IpcReply<state::Normal> {
+    pub(crate) unsafe fn new(buf: *const u32) -> Self {
+        let mut cmdbuf = CommandBufferReader::new(buf);
+        let header = cmdbuf.read(); // Skip the header. Replies are not yet validated.
+
+        trace!("Received IPC reply: header = {:#x?}", IpcHeader(header));
+
+        Self {
+            cmdbuf,
+            _state: PhantomData,
         }
     }
 
     #[inline]
-    pub(crate) fn read_range(&mut self, len: usize) -> &'a [u32] {
-        let slice_range = Range {
-            start: self.read_ptr(),
-            end: unsafe { self.read_ptr().add(len).offset(-1) },
-        };
+    pub(crate) fn read_result<R: IpcResult>(&mut self) -> R {
+        R::decode(self.cmdbuf.read())
+    }
 
-        if self.range().contains(&slice_range.start) && self.range().contains(&slice_range.end) {
-            unsafe {
-                let slice = core::slice::from_raw_parts(slice_range.start, len);
-                self.advance_read_ptr(len);
-                slice
-            }
-        } else {
-            panic!(
-                "Detected attempt to read past the end of the result buffer: {:?} is past the end of {:?}", 
-                slice_range, self.range()
-            )
+    pub(crate) fn read_word(&mut self) -> u32 {
+        self.read_result()
+    }
+
+    #[inline]
+    pub(crate) fn finish_results(self) -> IpcReply<state::Translate> {
+        IpcReply {
+            cmdbuf: self.cmdbuf,
+            _state: PhantomData,
         }
     }
 }
 
-#[derive(Debug)]
-pub struct Reply<'a> {
-    pub command_id: u16,
-    pub values: ReplyValues<'a>,
-    pub translate_values: ReplyTranslateValues<'a>,
-}
-
-impl<'a> Reply<'a> {
-    #[inline(always)]
-    pub(crate) fn parse_nofail(mut reply_buffer: ReplyBuffer<'a>) -> (Self, ResultCode) {
-        let header = IpcHeader::from(reply_buffer.read());
-
-        trace!("Parsed header: {:x?}", header);
-
-        let (result_code, values) = match header.normal_param_words() {
-            0 => {
-                debug!("IPC reply contains no result code, assuming failure");
-                (
-                    ResultCode::new(
-                        Level::Info,
-                        Summary::InvalidResultValue,
-                        Module::Application,
-                        CommonDescription::NoData.to_value(),
-                    ),
-                    None,
-                )
-            }
-            count => {
-                let result_code = ResultCode::from(reply_buffer.read());
-
-                trace!("Reply contains {} normal parameters", count);
-                (
-                    result_code,
-                    Some(reply_buffer.read_range(count.wrapping_sub(1))),
-                )
-            }
-        };
-
-        let translate_values = match header.translate_param_words() {
-            0 => None,
-            1 => None,
-            word_size => {
-                trace!("Reply contains {} words of translate parameters", word_size);
-                let (header, body) = reply_buffer.read_range(word_size).split_first().unwrap();
-                let descriptor = TranslationDescriptor::from(*header);
-                trace!("translate descriptor: {:08x?}", descriptor);
-                let nhandles = descriptor.len() + 1;
-                let handles = &body[0..nhandles];
-
-                trace!("Handles: {:08x?}", handles);
-
-                Some(unsafe {
-                    core::slice::from_raw_parts(
-                        handles.as_ptr() as *const WeakHandle,
-                        handles.len(),
-                    )
-                })
-            }
-        };
-
-        (
-            Self {
-                command_id: header.command_id(),
-                values: ReplyValues { values },
-                translate_values: ReplyTranslateValues {
-                    values: translate_values,
-                },
-            },
-            result_code,
-        )
+impl IpcReply<state::Translate> {
+    #[inline]
+    pub(crate) unsafe fn read_translate_result<R: TranslateResult>(&mut self) -> R {
+        R::decode(&mut self.cmdbuf)
     }
 
-    #[inline(always)]
-    pub(crate) fn parse(reply_buffer: ReplyBuffer<'a>) -> Result<Self> {
-        let (reply, result_code) = Self::parse_nofail(reply_buffer);
-
-        result_code.and(reply)
-    }
-}
-
-#[derive(Debug)]
-pub struct ReplyValues<'a> {
-    values: Option<&'a [u32]>,
-}
-
-impl<'a> Index<usize> for ReplyValues<'a> {
-    type Output = u32;
-    fn index(&self, index: usize) -> &Self::Output {
-        match self.values {
-            None => panic!("Cannot index into empty set of reply values"),
-            Some(values) => &values[index],
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ReplyTranslateValues<'a> {
-    values: Option<&'a [WeakHandle<'a>]>,
-}
-
-impl<'a> Index<usize> for ReplyTranslateValues<'a> {
-    type Output = WeakHandle<'a>;
-    fn index(&self, index: usize) -> &Self::Output {
-        match self.values {
-            None => panic!("Cannot index into empty set of reply translate values"),
-            Some(values) => &values[index],
-        }
+    #[inline]
+    pub(crate) unsafe fn read_handle(&mut self) -> Handle {
+        self.read_translate_result()
     }
 }

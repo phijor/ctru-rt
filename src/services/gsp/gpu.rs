@@ -1,10 +1,10 @@
-use crate::ipc::{IpcRequest, Reply, TranslateParameterSet};
+use crate::ipc::{IpcRequest, StaticBuffer};
 use crate::os::mem::MemoryPermission;
 use crate::os::{
     sharedmem::{MappedBlock, SharedMemoryMapper},
     BorrowHandle, Handle, WeakHandle,
 };
-use crate::result::{ErrorCode, Result};
+use crate::result::{ErrorCode, Result, ResultCode};
 use crate::services::srv::Srv;
 use crate::svc::Timeout;
 use crate::sync::{Event, ResetType};
@@ -402,8 +402,8 @@ impl Gpu {
         flags: u8,
     ) -> Result<AccessRightsToken> {
         let _reply = IpcRequest::command(0x16)
-            .with_params(&[flags.into()])
-            .with_translate_params(&[TranslateParameterSet::HandleRef(&[owner_process])])
+            .parameter(u32::from(flags))
+            .translate_parameter(owner_process)
             .dispatch(service_handle.handle())?;
 
         Ok(AccessRightsToken { service_handle })
@@ -417,16 +417,16 @@ impl Gpu {
 
         let gpu_events = Event::new(ResetType::OneShot)?;
 
-        let (reply, result_code) = IpcRequest::command(0x13)
-            .with_params(&[flags as u32])
-            .with_translate_params(&[TranslateParameterSet::HandleRef(&[
-                gpu_events.borrow_handle()
-            ])])
-            .dispatch_no_parse(access.borrow_handle())
-            .map(Reply::parse_nofail)?;
+        let (result_code, gsp_module_thread_index, queue_handle) = {
+            let (result_code, mut reply) = IpcRequest::command(0x13)
+                .parameter(flags as u32)
+                .translate_parameter(gpu_events.borrow_handle())
+                .dispatch_no_fail(access.borrow_handle())?;
 
-        let gsp_module_thread_index = (reply.values[0] & 0xff) as u8;
-        let queue_handle = unsafe { Handle::own(reply.translate_values[0]) };
+            (result_code, (reply.read_word() & 0xff) as u8, unsafe {
+                reply.finish_results().read_handle()
+            })
+        };
 
         const RESULT_NEED_HW_INIT: ErrorCode =
             ErrorCode::new(Level::Success, Summary::Success, Module::Gsp, 519);
@@ -592,7 +592,7 @@ impl Gpu {
 
     pub fn set_lcd_force_blank(&mut self, flags: u8) -> Result<()> {
         let _ = IpcRequest::command(0x0b)
-            .with_params(&[flags as u32])
+            .parameter(flags as u32)
             .dispatch(self.access.borrow_handle())?;
         Ok(())
     }
@@ -629,8 +629,8 @@ fn write_graphics_register(
 ) -> Result<()> {
     let data = core::slice::from_ref(value);
     let _ = IpcRequest::command(0x01)
-        .with_params(&[register_offset, 4])
-        .with_translate_params(&[TranslateParameterSet::StaticBuffer(data, 0)])
+        .parameters(&[register_offset, 4])
+        .translate_parameter(StaticBuffer::new(data, 0))
         .dispatch(service_handle)?;
 
     Ok(())
@@ -645,11 +645,9 @@ fn write_graphics_register_masked(
     let value = core::slice::from_ref(value);
     let mask = core::slice::from_ref(mask);
     let _ = IpcRequest::command(0x02)
-        .with_params(&[register_offset, 4])
-        .with_translate_params(&[
-            TranslateParameterSet::StaticBuffer(value, 0),
-            TranslateParameterSet::StaticBuffer(mask, 1),
-        ])
+        .parameters(&[register_offset, 4])
+        .translate_parameter(StaticBuffer::new(value, 0))
+        .translate_parameter(StaticBuffer::new(mask, 1))
         .dispatch(service_handle)?;
 
     Ok(())

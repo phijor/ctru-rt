@@ -103,30 +103,22 @@ impl Hid {
         debug!("Acquiring IPC handles for HID module...");
         let reply = IpcRequest::command(0xa).dispatch(service_handle.handle())?;
 
-        unsafe {
-            let memory_handle = Handle::own(reply.translate_values[0]);
-            let pads = (
-                Handle::own(reply.translate_values[1]),
-                Handle::own(reply.translate_values[2]),
-            );
-            let accelerometer = Handle::own(reply.translate_values[3]);
-            let gyroscope = Handle::own(reply.translate_values[4]);
-            let debugpad = Handle::own(reply.translate_values[5]);
+        let [memory_handle, pad0, pad1, accelerometer, gyroscope, debugpad]: [Handle; 6] =
+            unsafe { reply.finish_results().read_translate_result() };
 
-            debug!("Mapping HID shared memory...");
-            // It's important to map memory last: if this fails, all handles above are dropped properly
-            let sharedmem = SharedMemory::new(memory_handle)?;
+        debug!("Mapping HID shared memory...");
+        // It's important to map memory last: if this fails, all handles above are dropped properly
+        let sharedmem = SharedMemory::new(memory_handle)?;
 
-            debug!("HID initialized!");
-            Ok(Self {
-                service_handle,
-                sharedmem,
-                pads,
-                accelerometer,
-                gyroscope,
-                debugpad,
-            })
-        }
+        debug!("HID initialized!");
+        Ok(Self {
+            service_handle,
+            sharedmem,
+            pads: (pad0, pad1),
+            accelerometer,
+            gyroscope,
+            debugpad,
+        })
     }
 
     fn enable_accelerometer(&self) -> Result<()> {

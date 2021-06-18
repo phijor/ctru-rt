@@ -1,5 +1,5 @@
 use crate::{
-    ipc::{self, TranslateParameterSet},
+    ipc::{IpcRequest, ThisProcessId},
     os::Handle,
     result::Result,
     svc,
@@ -42,25 +42,26 @@ impl Srv {
 
     /// Register this process as a client of `srv:`
     fn register_client(&self) -> Result<()> {
-        ipc::IpcRequest::command(0x1)
-            .with_translate_params(&[TranslateParameterSet::ProcessId])
+        IpcRequest::command(0x1)
+            .translate_parameter(ThisProcessId)
             .dispatch(self.handle.handle())
             .map(drop)
     }
 
     pub fn enable_notifications(&self) -> Result<Handle> {
-        let reply = ipc::IpcRequest::command(0x2).dispatch(self.handle.handle())?;
-        Ok(unsafe { Handle::own(reply.translate_values[0]) })
+        let reply = IpcRequest::command(0x2).dispatch(self.handle.handle())?;
+        Ok(unsafe { reply.finish_results().read_handle() })
     }
 
     pub fn get_service_handle(&self, service_name: &str) -> Result<Handle> {
         let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
 
-        let reply = ipc::IpcRequest::command(0x5)
-            .with_params(&[arg0, arg1, len, self.blocking_policy.to_value()])
-            .dispatch(self.handle.handle())?;
+        let mut reply = IpcRequest::command(0x5)
+            .parameters(&[arg0, arg1, len, self.blocking_policy.to_value()])
+            .dispatch(self.handle.handle())?
+            .finish_results();
 
-        Ok(unsafe { Handle::own(reply.translate_values[0]) })
+        Ok(unsafe { reply.read_handle() })
     }
 }
 
