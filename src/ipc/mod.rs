@@ -12,6 +12,7 @@ use core::{fmt, ops::Range};
 #[derive(Copy, Clone)]
 pub struct IpcHeader(u32);
 
+#[allow(clippy::identity_op)]
 impl IpcHeader {
     pub const fn new(
         command_id: u16,
@@ -43,9 +44,9 @@ impl From<u32> for IpcHeader {
     }
 }
 
-impl Into<u32> for IpcHeader {
-    fn into(self) -> u32 {
-        self.0
+impl From<IpcHeader> for u32 {
+    fn from(header: IpcHeader) -> Self {
+        header.0
     }
 }
 
@@ -333,9 +334,9 @@ impl TranslationDescriptor {
     }
 }
 
-impl Into<u32> for TranslationDescriptor {
-    fn into(self) -> u32 {
-        self.into_raw()
+impl From<TranslationDescriptor> for u32 {
+    fn from(descriptor: TranslationDescriptor) -> Self {
+        descriptor.into_raw()
     }
 }
 

@@ -277,9 +277,9 @@ pub mod spin {
         Signaled = 1,
     }
 
-    impl Into<i32> for State {
-        fn into(self) -> i32 {
-            self as i32
+    impl From<State> for i32 {
+        fn from(state: State) -> Self {
+            state as i32
         }
     }
 
