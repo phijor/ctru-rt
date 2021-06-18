@@ -39,7 +39,7 @@ fn run() -> Result<()> {
         info!("Waiting for VBLANK0...");
 
         gfx.wait_vblank0().ok();
-        if let None = runs.next() {
+        if runs.next().is_none() {
             break;
         }
     }
