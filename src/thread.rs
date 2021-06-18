@@ -106,7 +106,7 @@ impl ThreadBuilder {
     {
         let (memory_start, memory_layout) = self.allocate_thread_memory();
 
-        let stack_top = unsafe { memory_start.offset(memory_layout.size() as isize) };
+        let stack_top = unsafe { memory_start.add(memory_layout.size()) };
 
         let packet = ThreadPacket::new(f);
         let argument = ThreadPacket::into_argument(packet);

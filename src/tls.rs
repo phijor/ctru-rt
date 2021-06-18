@@ -10,12 +10,12 @@ pub struct ThreadLocalStorage(*mut u8);
 impl ThreadLocalStorage {
     #[inline]
     pub fn command_buffer(&self) -> *mut u32 {
-        unsafe { self.0.offset(0x80) as *mut u32 }
+        unsafe { self.0.add(0x80) as *mut u32 }
     }
 
     #[inline]
     pub fn static_buffer_descriptors(&self) -> StaticBufferDescriptors {
-        unsafe { StaticBufferDescriptors::new(self.0.offset(0x180) as *mut u32) }
+        unsafe { StaticBufferDescriptors::new(self.0.add(0x180) as *mut u32) }
     }
 }
 
@@ -51,11 +51,12 @@ impl<'a> StaticBufferDescriptors<'a> {
 
     pub fn set<T: 'a>(&mut self, index: usize, data: &'a mut [T]) {
         let index = index & 0b1111;
-        let flags =
-            (1 << 1) | (data.len() * core::mem::size_of::<T>() << 14) as u32 | (index << 10) as u32;
+        let flags = (1 << 1)
+            | ((data.len() * core::mem::size_of::<T>()) << 14) as u32
+            | (index << 10) as u32;
 
         unsafe {
-            self.descriptors.offset(index as isize).write(Descriptor {
+            self.descriptors.add(index).write(Descriptor {
                 flags,
                 ptr: data.as_ptr() as *mut (),
                 _lifetime: PhantomData,

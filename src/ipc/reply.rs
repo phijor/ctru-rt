@@ -24,7 +24,7 @@ impl<'a> ReplyBuffer<'a> {
     }
 
     pub(crate) fn end(&self) -> *const u32 {
-        unsafe { self.0.offset(COMMAND_BUFFER_LENGTH as isize) }
+        unsafe { self.0.add(COMMAND_BUFFER_LENGTH) }
     }
 
     pub(crate) fn range(&self) -> Range<*const u32> {
@@ -39,7 +39,7 @@ impl<'a> ReplyBuffer<'a> {
     }
 
     unsafe fn advance_read_ptr(&mut self, offset: usize) {
-        self.1 = self.1.offset(offset as isize)
+        self.1 = self.1.add(offset)
     }
 
     #[inline]
@@ -62,7 +62,7 @@ impl<'a> ReplyBuffer<'a> {
     pub(crate) fn read_range(&mut self, len: usize) -> &'a [u32] {
         let slice_range = Range {
             start: self.read_ptr(),
-            end: unsafe { self.read_ptr().offset(len as isize).offset(-1) },
+            end: unsafe { self.read_ptr().add(len).offset(-1) },
         };
 
         if self.range().contains(&slice_range.start) && self.range().contains(&slice_range.end) {

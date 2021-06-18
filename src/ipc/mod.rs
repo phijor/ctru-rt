@@ -255,7 +255,7 @@ impl CommandBuffer {
     pub(crate) fn range(&self) -> Range<*const u32> {
         Range {
             start: self.start(),
-            end: unsafe { self.start().offset(COMMAND_BUFFER_LENGTH as isize) },
+            end: unsafe { self.start().add(COMMAND_BUFFER_LENGTH) },
         }
     }
 }
@@ -271,7 +271,7 @@ impl CommandBufferWriter {
         if self.buf.range().contains(&(self.end_ptr as *const u32)) {
             unsafe {
                 self.end_ptr.write(arg);
-                self.end_ptr = self.end_ptr.offset(1);
+                self.end_ptr = self.end_ptr.add(1);
             }
         } else {
             panic!(
