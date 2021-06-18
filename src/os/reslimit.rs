@@ -90,7 +90,7 @@ impl<'proc> ProcessLimits<'proc> {
     }
 }
 
-pub fn process_limits<'proc>(process_handle: WeakHandle<'proc>) -> Result<ProcessLimits<'proc>> {
+pub fn process_limits(process_handle: WeakHandle) -> Result<ProcessLimits> {
     let handle = svc::get_resource_limit(process_handle)?;
 
     Ok(ProcessLimits {

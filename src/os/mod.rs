@@ -180,7 +180,7 @@ impl MemoryRegion {
 }
 
 pub trait BorrowHandle {
-    fn borrow_handle<'a>(&'a self) -> WeakHandle<'a>;
+    fn borrow_handle(&self) -> WeakHandle;
 }
 
 impl BorrowHandle for Handle {

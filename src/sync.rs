@@ -110,7 +110,7 @@ pub type Mutex<T> = lock_api::Mutex<OsMutex, T>;
 pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, OsMutex, T>;
 
 impl BorrowHandle for AtomicHandle {
-    fn borrow_handle<'a>(&'a self) -> WeakHandle<'a> {
+    fn borrow_handle(&self) -> WeakHandle {
         let raw_handle = self.0.load(Ordering::SeqCst);
         WeakHandle::new(raw_handle)
     }

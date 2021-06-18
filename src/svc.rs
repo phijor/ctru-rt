@@ -169,8 +169,8 @@ pub unsafe fn create_memory_block(
     svc!(0x1e: (other_permissions, address, size, my_permissions) -> Handle)
 }
 
-pub unsafe fn map_memory_block<'h>(
-    handle: WeakHandle<'h>,
+pub unsafe fn map_memory_block(
+    handle: WeakHandle,
     address: usize,
     my_permissions: MemoryPermission,
     other_permissions: MemoryPermission,
@@ -178,7 +178,7 @@ pub unsafe fn map_memory_block<'h>(
     svc!(0x1f: (handle, address, my_permissions, other_permissions) -> ())
 }
 
-pub unsafe fn unmap_memory_block<'h>(handle: WeakHandle<'h>, addr: usize) -> Result<()> {
+pub unsafe fn unmap_memory_block(handle: WeakHandle, addr: usize) -> Result<()> {
     svc!(0x20: (handle, addr) -> ())
 }
 
