@@ -9,12 +9,13 @@ pub struct SvcDebugLog;
 
 impl SvcDebugLog {}
 
+#[allow(clippy::unit_arg)]
 impl fmt::Write for SvcDebugLog {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         Ok(output_debug_string(s))
     }
 
-    fn write_fmt(self: &mut Self, args: fmt::Arguments<'_>) -> fmt::Result {
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
         if crate::heap::initialized() {
             Ok(output_debug_string(&alloc::fmt::format(args)))
         } else {
