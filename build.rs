@@ -98,7 +98,7 @@ fn main() {
     // Put the linker script somewhere the linker can find it
     LinkerScript {
         script: "link.x".into(),
-        out_dir: out_dir,
+        out_dir,
     }
     .include()
     .expect("Failed to copy linker script");
