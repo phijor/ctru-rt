@@ -10,6 +10,7 @@
 #![feature(link_llvm_intrinsics)]
 // Allow dead code for now
 #![allow(dead_code)]
+#![allow(clippy::missing_safety_doc)]
 
 pub mod debug;
 pub mod env;
