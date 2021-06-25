@@ -6,8 +6,9 @@ use core::{fmt::Write, panic::PanicInfo};
 use ctru_rt::{
     entry,
     graphics::Grapics,
+    ports::srv::Srv,
     result::Result,
-    services::{gsp::gpu::Gpu, hid::Hid, srv::Srv},
+    services::{gsp::gpu::Gpu, hid::Hid},
     svc,
 };
 use log::{error, info};

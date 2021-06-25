@@ -9,12 +9,10 @@ use ctru_rt::{
     debug::SvcDebugLog,
     entry,
     heap::{PageAlignError, PageAlignedBuffer},
+    ports::srv::Srv,
     result::{ErrorCode, Level, Module, Result, Summary},
-    services::{
-        soc::{Domain, Protocol, Soc, Type},
-        srv::Srv,
-    },
     svc::{sleep_thread, UserBreakReason},
+    services::soc::{Domain, Protocol, Soc, Type},
 };
 
 #[panic_handler]

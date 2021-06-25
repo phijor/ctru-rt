@@ -8,8 +8,9 @@ use log::{error, info};
 use ctru_rt::{
     debug::SvcDebugLog,
     entry,
+    ports::srv::Srv,
     result::Result,
-    services,
+    services::hid::Hid,
     svc::{sleep_thread, Timeout, UserBreakReason},
 };
 
@@ -22,7 +23,7 @@ fn panic_handler(info: &PanicInfo) -> ! {
 }
 
 fn run() -> Result<()> {
-    let srv = services::srv::Srv::init()?;
+    let srv = Srv::init()?;
 
     let _ = info!("Initialized srv: {:#0x?}", srv);
 
@@ -40,7 +41,7 @@ fn run() -> Result<()> {
     // let socket = soc.socket(2, 1, 0)?;
     // let _ = info!("Initialized socket: {:#0x?}", socket);
 
-    let hid = services::hid::Hid::init(&srv)?;
+    let hid = Hid::init(&srv)?;
 
     loop {
         let kpad = hid.last_keypad();

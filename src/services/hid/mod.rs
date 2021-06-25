@@ -5,8 +5,8 @@ use crate::{
         sharedmem::{MappedBlock, SharedMemoryMapper},
         Handle, SystemTick,
     },
+    ports::srv::Srv,
     result::Result,
-    services::srv::Srv,
 };
 
 use log::debug;

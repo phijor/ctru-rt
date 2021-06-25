@@ -6,6 +6,7 @@ use crate::{
 };
 
 use ctru_rt_macros::EnumCast;
+use log::debug;
 
 #[derive(Debug, Copy, Clone, EnumCast)]
 #[enum_cast(value_type = "u32")]
@@ -22,6 +23,7 @@ pub struct Srv {
 
 impl Srv {
     pub fn init() -> Result<Self> {
+        debug!("Connecting to port `srv:`...");
         let srv = Self {
             handle: svc::connect_to_port("srv:\0")?,
             blocking_policy: BlockingPolicy::Blocking,
@@ -42,6 +44,7 @@ impl Srv {
 
     /// Register this process as a client of `srv:`
     fn register_client(&self) -> Result<()> {
+        debug!("Registering this process as client of `srv:`...");
         IpcRequest::command(0x1)
             .translate_parameter(ThisProcessId)
             .dispatch(self.handle.handle())

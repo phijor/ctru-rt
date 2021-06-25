@@ -5,7 +5,7 @@ use crate::os::{
     BorrowHandle, Handle, WeakHandle,
 };
 use crate::result::{ErrorCode, Result, ResultCode};
-use crate::services::srv::Srv;
+use crate::ports::srv::Srv;
 use crate::svc::Timeout;
 use crate::sync::{Event, ResetType};
 
