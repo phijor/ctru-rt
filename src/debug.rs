@@ -114,7 +114,7 @@ static LOGGER: SvcDebugLog = SvcDebugLog;
 
 impl Log for SvcDebugLog {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Debug
+        metadata.level() <= Level::Trace
     }
 
     fn log(&self, record: &Record) {
@@ -141,5 +141,5 @@ impl Log for SvcDebugLog {
 }
 
 pub fn init_log() -> Result<(), log::SetLoggerError> {
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(log::LevelFilter::Debug))
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(log::LevelFilter::Trace))
 }
