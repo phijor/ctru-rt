@@ -40,13 +40,15 @@ fn write_string_fallback(args: fmt::Arguments) -> fmt::Result {
 }
 
 #[derive(Debug)]
-pub(crate) struct FixedSizeBufferWriter<const N: usize> {
+#[doc(hidden)]
+pub struct FixedSizeBufferWriter<const N: usize> {
     buffer: [u8; N],
     pos: usize,
 }
 
 impl<const N: usize> FixedSizeBufferWriter<N> {
-    pub(crate) fn new() -> Self {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         Self {
             buffer: [0; N],
             pos: 0,
@@ -57,7 +59,7 @@ impl<const N: usize> FixedSizeBufferWriter<N> {
         &mut self.buffer[self.pos..]
     }
 
-    pub(crate) fn occupied(&self) -> &[u8] {
+    pub fn occupied(&self) -> &[u8] {
         &self.buffer[..self.pos]
     }
 }

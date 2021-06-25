@@ -297,7 +297,8 @@ pub fn user_break(reason: UserBreakReason) -> ! {
 }
 
 #[inline(always)]
-pub(crate) fn output_debug_bytes(bytes: &[u8]) {
+#[doc(hidden)]
+pub fn output_debug_bytes(bytes: &[u8]) {
     let ptr = bytes.as_ptr();
     let len = bytes.len();
     unsafe {
