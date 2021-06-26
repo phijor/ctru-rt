@@ -154,6 +154,10 @@ impl OsMutex {
         Ok(Self { handle })
     }
 
+    pub unsafe fn from_handle(handle: Handle) -> Self {
+        Ok(Self { handle })
+    }
+
     pub unsafe fn lock(&self, timeout: Timeout) -> Result<()> {
         svc::wait_synchronization(self.handle.borrow_handle(), timeout)?;
         Ok(())
