@@ -325,7 +325,7 @@ pub enum Module {
 }
 
 pub trait Description {
-    fn into_description(&self) -> u32;
+    fn into_code(self) -> u32;
 }
 
 #[derive(Debug, EnumCast)]
@@ -359,7 +359,7 @@ pub enum CommonDescription {
 }
 
 impl Description for CommonDescription {
-    fn into_description(&self) -> u32 {
+    fn into_code(self) -> u32 {
         self.to_value()
     }
 }
