@@ -363,3 +363,10 @@ impl Description for CommonDescription {
         self.to_value()
     }
 }
+
+pub const ERROR_OUT_OF_MEMORY: ErrorCode = ErrorCode::new(
+    Level::Fatal,
+    Summary::OutOfResource,
+    Module::Application,
+    CommonDescription::OutOfMemory.to_value(),
+);

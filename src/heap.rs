@@ -1,6 +1,6 @@
 use crate::os::reslimit::process_limits;
 use crate::os::WeakHandle;
-use crate::result::ErrorCode;
+use crate::result::ERROR_OUT_OF_MEMORY;
 use crate::{early_debug, os::mem, result::Result, svc};
 
 use core::num::NonZeroUsize;
@@ -51,21 +51,13 @@ unsafe fn set_linear_heap_size(linear_heap_size: usize) {
 pub(crate) fn init() -> Result<()> {
     early_debug!("Initializing heap...",);
 
-    use crate::result::{Level, Module, Summary};
-    const ERR_OUT_OF_MEMORY: ErrorCode = ErrorCode::new(
-        Level::Permanent,
-        Summary::OutOfResource,
-        Module::Application,
-        1,
-    );
-
     let memory_remaining = {
         let limits = process_limits(WeakHandle::active_process())?;
         limits.memory_allocatable().remaining()?
     };
 
     let memory_remaining = if memory_remaining < 0 {
-        return Err(ERR_OUT_OF_MEMORY);
+        return Err(ERROR_OUT_OF_MEMORY);
     } else {
         ((memory_remaining as u32) & !0xfff) as usize
     };
@@ -76,7 +68,7 @@ pub(crate) fn init() -> Result<()> {
     let total_memory = heap_size + linear_heap_size;
 
     if total_memory > memory_remaining {
-        return Err(ERR_OUT_OF_MEMORY);
+        return Err(ERROR_OUT_OF_MEMORY);
     }
 
     let (heap_size, linear_heap_size) = match (

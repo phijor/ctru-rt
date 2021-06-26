@@ -4,7 +4,7 @@ use super::{
     mem::{MemoryPermission, MemoryState, QueryResult},
     Handle,
 };
-use crate::result::{CommonDescription, ErrorCode, Level, Module, Result, Summary};
+use crate::result::{Result, ERROR_OUT_OF_MEMORY};
 use crate::svc;
 
 use log::debug;
@@ -81,12 +81,7 @@ impl SharedMemoryMapper {
         let size = (size + 0xFFF) & !0xFFF;
 
         let candidate = self.next_candidate.load(Ordering::Acquire);
-        let address = Self::find_gap(candidate, size)?.ok_or(ErrorCode::new(
-            Level::Fatal,
-            Summary::OutOfResource,
-            Module::Application,
-            CommonDescription::OutOfMemory.to_value(),
-        ))?;
+        let address = Self::find_gap(candidate, size)?.ok_or(ERROR_OUT_OF_MEMORY)?;
 
         let next = candidate.saturating_add(size).min(SHAREDMEM_END);
         self.next_candidate.store(next, Ordering::Release);
