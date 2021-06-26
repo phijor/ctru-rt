@@ -56,10 +56,6 @@ impl Handle {
         }
     }
 
-    pub unsafe fn own(handle: WeakHandle) -> Self {
-        Self::new(handle.as_raw())
-    }
-
     pub const fn new_closed() -> Self {
         Self {
             handle: None,
