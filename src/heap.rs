@@ -48,6 +48,11 @@ unsafe fn set_linear_heap_size(linear_heap_size: usize) {
     __linear_heap_size.store(linear_heap_size, Ordering::Release)
 }
 
+#[inline]
+fn page_align(size: usize) -> usize {
+    size & !0xfff
+}
+
 pub(crate) fn init() -> Result<()> {
     early_debug!("Initializing heap...",);
 
@@ -59,7 +64,7 @@ pub(crate) fn init() -> Result<()> {
     let memory_remaining = if memory_remaining < 0 {
         return Err(ERROR_OUT_OF_MEMORY);
     } else {
-        ((memory_remaining as u32) & !0xfff) as usize
+        page_align(memory_remaining as usize)
     };
 
     let heap_size = heap_size();
@@ -76,7 +81,7 @@ pub(crate) fn init() -> Result<()> {
         NonZeroUsize::new(linear_heap_size),
     ) {
         (None, None) => {
-            let half = (memory_remaining / 2) & !0xfff;
+            let half = page_align(memory_remaining / 2);
             let heap_size = (memory_remaining - half).min(HEAP_SPLIT_CAP);
             let linear_heap_size = memory_remaining - heap_size;
 
