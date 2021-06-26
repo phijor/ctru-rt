@@ -19,10 +19,7 @@ pub enum WifiStatus {
 
 impl WifiStatus {
     pub fn is_connected(&self) -> bool {
-        match self {
-            Self::NoConnection => false,
-            _ => true,
-        }
+        !matches!(self, Self::NoConnection)
     }
 }
 
