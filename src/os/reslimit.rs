@@ -36,30 +36,22 @@ pub enum LimitType {
     CpuTime,
 }
 
-pub struct Limit<'limits, 'proc> {
+pub struct Limit<'limits> {
     type_: LimitType,
-    limits: &'limits ProcessLimits<'proc>,
+    limits_handle: WeakHandle<'limits>,
 }
 
-impl<'limits, 'proc> Limit<'limits, 'proc> {
+impl<'limits> Limit<'limits> {
     pub fn limit(&self) -> Result<i64> {
         let mut value = [0i64];
-        svc::get_resource_limit_values(
-            self.limits.handle.borrow_handle(),
-            &mut value,
-            &[self.type_],
-        )?;
+        svc::get_resource_limit_values(self.limits_handle, &mut value, &[self.type_])?;
 
         Ok(value[0])
     }
 
     pub fn current(&self) -> Result<i64> {
         let mut value = [0i64];
-        svc::get_resource_limit_current_values(
-            self.limits.handle.borrow_handle(),
-            &mut value,
-            &[self.type_],
-        )?;
+        svc::get_resource_limit_current_values(self.limits_handle, &mut value, &[self.type_])?;
 
         Ok(value[0])
     }
@@ -78,10 +70,10 @@ pub struct ProcessLimits<'proc> {
 }
 
 impl<'proc> ProcessLimits<'proc> {
-    pub(crate) fn get<'limits>(&'limits self, type_: LimitType) -> Limit<'limits, 'proc> {
+    pub(crate) fn get(&self, type_: LimitType) -> Limit<'_> {
         Limit {
             type_,
-            limits: self,
+            limits_handle: self.handle.borrow_handle(),
         }
     }
 
@@ -90,7 +82,7 @@ impl<'proc> ProcessLimits<'proc> {
     }
 }
 
-pub fn process_limits(process_handle: WeakHandle) -> Result<ProcessLimits> {
+pub fn process_limits(process_handle: WeakHandle<'_>) -> Result<ProcessLimits<'_>> {
     let handle = svc::get_resource_limit(process_handle)?;
 
     Ok(ProcessLimits {
