@@ -463,7 +463,7 @@ impl Gpu {
 
     fn init_hardware(access: &mut AccessRightsToken) -> Result<()> {
         const GPU_REG_BASE: u32 = 0x40_0000;
-        const INIT_VALUES: &'static [(u32, u32, Option<u32>)] = &[
+        const INIT_VALUES: &[(u32, u32, Option<u32>)] = &[
             (0x1000, 0, None),
             (0x1080, 0x12345678, None),
             (0x10C0, 0xFFFFFFF0, None),
