@@ -370,3 +370,9 @@ pub const ERROR_OUT_OF_MEMORY: ErrorCode = ErrorCode::new(
     Module::Application,
     CommonDescription::OutOfMemory.to_value(),
 );
+pub const ERROR_NOT_AUTHORIZED: ErrorCode = ErrorCode::new(
+    Level::Fatal,
+    Summary::Internal,
+    Module::Application,
+    CommonDescription::NotAuthorized.to_value(),
+);

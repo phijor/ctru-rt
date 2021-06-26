@@ -15,6 +15,7 @@ pub enum ResetType {
 }
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Event {
     handle: Handle,
 }
@@ -39,6 +40,35 @@ impl Event {
 
     pub fn signal(&self) -> Result<()> {
         svc::signal_event(self.borrow_handle())
+    }
+
+    pub fn wait_all(events: &[Self], timeout: Timeout) -> Result<()> {
+        const WAIT_ALL: bool = true;
+        // SAFETY: Both `Event` and `WeakHandle` have the same layout.
+        // Therefore it is safe to transmute &[Event] into &[WeakHandle].
+        //
+        // There are the following #[repr(transparent)]-chains:
+        // * Event -> Handle -> Option<NonZeroU32> (-> u32, niche optimization)
+        // * WeakHandle -> u32
+        let handles: &[WeakHandle] = unsafe { core::mem::transmute(events) };
+        let index = svc::wait_synchronization_many(handles, WAIT_ALL, timeout)?;
+        assert_eq!(
+            index, -1,
+            "Waiting for all events in slice did not return -1!"
+        );
+        Ok(())
+    }
+
+    pub fn wait_any(events: &[Self], timeout: Timeout) -> Result<usize> {
+        use core::convert::TryFrom;
+        const WAIT_ANY: bool = false;
+        // SAFETY: See comment in Self::wait_all.
+        let handles: &[WeakHandle] = unsafe { core::mem::transmute(events) };
+        let index = svc::wait_synchronization_many(handles, WAIT_ANY, timeout)?;
+
+        let index =
+            usize::try_from(index).expect("Waiting for any event did not yield a valid index!");
+        Ok(index)
     }
 }
 

@@ -207,6 +207,25 @@ pub fn wait_synchronization(handle: WeakHandle, timeout: Timeout) -> Result<()> 
     unsafe { svc!(0x24: (handle, _, ns_high, ns_low) -> ()) }
 }
 
+pub fn wait_synchronization_many(
+    handles: &[WeakHandle],
+    wait_all: bool,
+    timeout: Timeout,
+) -> Result<isize> {
+    let (ns_high, ns_low) = (timeout.reg_high(), timeout.reg_low());
+    let num_handles = handles.len();
+    let handles: *const WeakHandle = handles.as_ptr();
+
+    let signaled = unsafe { svc!(0x25: (ns_low, handle, num_handles, wait_all, ns_high) -> usize) }?
+        as *const WeakHandle;
+
+    if signaled.is_null() {
+        Ok(-1)
+    } else {
+        Ok(unsafe { signaled.offset_from(handles) })
+    }
+}
+
 pub fn duplicate_handle(handle: WeakHandle) -> Result<Handle> {
     unsafe { svc!(0x27: (_, handle) -> Handle) }
 }
