@@ -360,13 +360,15 @@ pub mod spin {
             }
         }
 
-        pub fn try_wait(&self) -> core::result::Result<(), ()> {
+        pub fn try_wait(&self) -> core::result::Result<(), StickyEventClearedError> {
             let state = self.0.read();
 
             match *state {
-                State::Cleared => Err(()),
+                State::Cleared => Err(StickyEventClearedError),
                 State::Signaled => Ok(()),
             }
         }
     }
+
+    pub struct StickyEventClearedError;
 }
