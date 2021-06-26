@@ -68,13 +68,13 @@ impl From<u32> for InterruptHeader {
     }
 }
 
-impl Into<u32> for InterruptHeader {
-    fn into(self) -> u32 {
+impl From<InterruptHeader> for u32 {
+    fn from(header: InterruptHeader) -> Self {
         u32::from_le_bytes([
-            self.current_index,
-            self.events_total,
-            self.error,
-            self._unused,
+            header.current_index,
+            header.events_total,
+            header.error,
+            header._unused,
         ])
     }
 }
@@ -166,6 +166,20 @@ struct FramebufferInfo {
     info: *mut u32,
 }
 
+struct FramebufferInfoHeader(u32);
+
+impl FramebufferInfoHeader {
+    fn update_index(&self, index: FramebufferIndex) -> Self {
+        const FB_INDEX: usize = 0;
+        const FB_UPDATE: usize = 1;
+
+        let mut updated: [u8; 4] = self.0.to_le_bytes();
+        updated[FB_INDEX] = index.to_value();
+        updated[FB_UPDATE] = 1;
+        Self(u32::from_le_bytes(updated))
+    }
+}
+
 impl FramebufferInfo {
     fn header(&self) -> &AtomicU32 {
         unsafe { &*(self.info as *const AtomicU32) }
@@ -183,27 +197,19 @@ impl FramebufferInfo {
     }
 
     fn trigger_update(&self, active_fb: FramebufferIndex) {
-        const FB_INDEX: usize = 0;
-        const FB_UPDATE: usize = 1;
-
         let header = self.header();
-        let mut current: u32 = header.load(Ordering::Acquire);
+        let mut current = FramebufferInfoHeader(header.load(Ordering::Acquire));
         loop {
-            let updated = {
-                let mut updated: [u8; 4] = current.clone().to_le_bytes();
-                updated[FB_INDEX] = active_fb.clone().to_value();
-                updated[FB_UPDATE] = 1;
-                u32::from_le_bytes(updated)
-            };
+            let updated = current.update_index(active_fb);
 
             match header.compare_exchange_weak(
-                current,
-                updated,
+                current.0,
+                updated.0,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
                 Ok(_) => break,
-                Err(new) => current = new,
+                Err(new) => current = FramebufferInfoHeader(new),
             }
         }
     }
