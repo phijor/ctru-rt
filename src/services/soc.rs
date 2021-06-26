@@ -94,7 +94,7 @@ impl Soc {
         unimplemented!()
     }
 
-    pub fn bind(&self, socket: &SocketFd<'_>, addrlen: usize) -> Result<()> {
+    pub fn bind(&self, _socket: &SocketFd<'_>, _addrlen: usize) -> Result<()> {
         todo!()
     }
 
