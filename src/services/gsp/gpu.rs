@@ -4,8 +4,8 @@ use crate::os::{
     sharedmem::{MappedBlock, SharedMemoryMapper},
     BorrowHandle, Handle, WeakHandle,
 };
-use crate::result::{ErrorCode, Result, ResultCode};
 use crate::ports::srv::Srv;
+use crate::result::{ErrorCode, Result};
 use crate::svc::Timeout;
 use crate::sync::{Event, ResetType};
 
