@@ -1,6 +1,6 @@
 use crate::{
     ipc::{IpcRequest, ThisProcessId},
-    os::Handle,
+    os::{BorrowHandle, Handle},
     result::Result,
     svc,
 };
@@ -56,16 +56,110 @@ impl Srv {
         Ok(unsafe { reply.finish_results().read_handle() })
     }
 
+    pub fn register_service(&self, service_name: &str, max_sessions: u32) -> Result<Handle> {
+        let ((name0, name1), len) = unsafe { write_str_param(service_name) };
+        let mut reply = IpcRequest::command(0x2)
+            .parameters(&[name0, name1, len, max_sessions])
+            .dispatch(self.handle.borrow_handle())?
+            .finish_results();
+
+        Ok(unsafe { reply.read_handle() })
+    }
+
+    pub fn unregister_service(&self, service_name: &str) -> Result<()> {
+        let ((name0, name1), len) = unsafe { write_str_param(service_name) };
+        let _reply = IpcRequest::command(0x3)
+            .parameters(&[name0, name1, len])
+            .dispatch(self.borrow_handle())?;
+
+        Ok(())
+    }
+
     pub fn get_service_handle(&self, service_name: &str) -> Result<Handle> {
         let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
 
         let mut reply = IpcRequest::command(0x5)
             .parameters(&[arg0, arg1, len, self.blocking_policy.to_value()])
-            .dispatch(self.handle.handle())?
+            .dispatch(self.borrow_handle())?
             .finish_results();
 
         Ok(unsafe { reply.read_handle() })
     }
+
+    pub fn subscribe(&self, notification_id: u32) -> Result<()> {
+        let _reply = IpcRequest::command(0x9)
+            .parameter(notification_id)
+            .dispatch(self.borrow_handle())?;
+
+        Ok(())
+    }
+
+    pub fn unsubscribe(&self, notification_id: u32) -> Result<()> {
+        let _reply = IpcRequest::command(0xa)
+            .parameter(notification_id)
+            .dispatch(self.borrow_handle())?;
+
+        Ok(())
+    }
+
+    pub fn receive_notification(&self) -> Result<u32> {
+        let mut reply = IpcRequest::command(0xb).dispatch(self.borrow_handle())?;
+
+        Ok(reply.read_word())
+    }
+
+    pub fn publish_notification(
+        &self,
+        notification_id: u32,
+        coalesc_pending: bool,
+        ignore_overflow: bool,
+    ) -> Result<()> {
+        let _reply = IpcRequest::command(0xc)
+            .parameters(&[
+                notification_id,
+                publish_flags(coalesc_pending, ignore_overflow),
+            ])
+            .dispatch(self.borrow_handle())?;
+
+        Ok(())
+    }
+
+    pub fn publish_notification_get_subscribers<'s>(
+        &self,
+        notification_id: u32,
+        coalesc_pending: bool,
+        ignore_overflow: bool,
+        subscribers: &'s mut [u32],
+    ) -> Result<&'s [u32]> {
+        let mut reply = IpcRequest::command(0xd)
+            .parameters(&[
+                notification_id,
+                publish_flags(coalesc_pending, ignore_overflow),
+            ])
+            .dispatch(self.borrow_handle())?;
+
+        let num_subscribers = reply.read_word() as usize;
+
+        let subscribers = &mut subscribers[..num_subscribers];
+        for subscriber in subscribers.iter_mut() {
+            *subscriber = reply.read_word();
+        }
+
+        Ok(subscribers)
+    }
+
+    pub fn is_service_registered(&self, service_name: &str) -> Result<bool> {
+        let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
+        let mut reply = IpcRequest::command(0xe)
+            .parameters(&[arg0, arg1, len])
+            .dispatch(self.borrow_handle())?;
+
+        Ok(reply.read_word() != 0)
+    }
+}
+
+fn publish_flags(coalesc_pending: bool, ignore_overflow: bool) -> u32 {
+    u32::from(coalesc_pending) | u32::from(ignore_overflow) << 1
 }
 
 unsafe fn write_str_param(s: &str) -> ((u32, u32), u32) {
@@ -79,6 +173,12 @@ unsafe fn write_str_param(s: &str) -> ((u32, u32), u32) {
     let s_bytes = s.as_bytes();
     let n = buf.bytes.len().min(s_bytes.len());
 
-    &buf.bytes[..n].copy_from_slice(&s_bytes[..n]);
+    buf.bytes[..n].copy_from_slice(&s_bytes[..n]);
     ((buf.words[0], buf.words[1]), n as u32)
+}
+
+impl BorrowHandle for Srv {
+    fn borrow_handle(&self) -> crate::os::WeakHandle {
+        self.handle.borrow_handle()
+    }
 }
