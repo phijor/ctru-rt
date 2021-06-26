@@ -134,6 +134,6 @@ impl ThreadBuilder {
     }
 }
 
-pub fn spawn<F: FnOnce() + Send + Sync + 'static>(f: F) -> Result<Thread> {
+pub fn spawn<F: FnOnce() + Send + 'static>(f: F) -> Result<Thread> {
     ThreadBuilder::default().spawn(f)
 }
