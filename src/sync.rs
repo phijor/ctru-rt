@@ -159,7 +159,9 @@ impl OsMutex {
     }
 
     pub unsafe fn from_handle(handle: Handle) -> Self {
-        Ok(Self { handle })
+        Self {
+            handle: handle.into(),
+        }
     }
 
     pub unsafe fn lock(&self, timeout: Timeout) -> Result<()> {
