@@ -6,7 +6,6 @@
 #![feature(try_trait_v2)]
 #![feature(control_flow_enum)]
 #![feature(auto_traits)]
-#![feature(asm)]
 #![feature(const_panic)]
 #![feature(alloc_error_handler, allocator_api)]
 #![feature(new_uninit)]

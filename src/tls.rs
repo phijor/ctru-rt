@@ -27,7 +27,7 @@ impl ThreadLocalStorage {
 pub fn get_thread_local_storage() -> ThreadLocalStorage {
     let data: *mut u8;
     unsafe {
-        asm!(
+        core::arch::asm!(
             "mrc p15, 0, {0}, c13, c0, 3",
             out(reg) data,
         )

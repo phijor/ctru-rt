@@ -12,6 +12,7 @@ use crate::{
     sync::{ArbitrationType, ResetType},
 };
 
+use core::arch::asm;
 use core::{convert::TryInto, time::Duration};
 
 use ctru_rt_macros::svc;

@@ -188,7 +188,7 @@ impl SvcSpec {
 
         let asm_call = match self.output {
             OutputSpec::NoReturn(_) => {
-                quote! { asm!(#svc_mnemonic, #(#inputs,)* options(noreturn, nostack)) }
+                quote! { core::arch::asm!(#svc_mnemonic, #(#inputs,)* options(noreturn, nostack)) }
             }
             _ => {
                 let result_code = Ident::new("__out_r0_result_code", Span::call_site());
@@ -213,7 +213,7 @@ impl SvcSpec {
 
                         #(#output_decl)*
 
-                        asm!(
+                        core::arch::asm!(
                             #svc_mnemonic,
                             #(#inputs,)*
                             #result_register,
