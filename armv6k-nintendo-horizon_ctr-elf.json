@@ -6,8 +6,6 @@
   "linker-flavor": "ld",
   "linker-is-gnu": true,
 
-  "ar": "arm-none-eabi-ar",
-
   "target-endian": "little",
   "target-pointer-width": "32",
   "target-c-int-width": "32",
@@ -17,8 +15,6 @@
   "os": "horizon",
   "cpu": "mpcore",
 
-  "atomic_cas": false,
-  "max_atomic_width": 32,
   "features": ["+vfp2", "hard-float"],
 
   "relocation-model": "static",
@@ -26,11 +22,6 @@
   "executables": true,
   "exe-suffix": ".elf",
 
-  "pre-link-args-crt": {
-    "ld": [
-      "ctru-rt.o"
-    ]
-  },
   "pre-link-args": {
     "ld": [
       "-Tlink.x",
