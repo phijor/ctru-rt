@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Philipp Joram <mail@phijor.me>"]
 edition = "2018"
 links = "ctru-rt"
+license = "MPL-2.0"
 
 [profile.dev]
 panic = "abort"
