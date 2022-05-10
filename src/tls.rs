@@ -35,21 +35,22 @@ pub fn get_thread_local_storage() -> ThreadLocalStorage {
     ThreadLocalStorage(data)
 }
 
-#[repr(packed)]
-struct Descriptor<'a> {
+#[repr(C)]
+struct Descriptor {
     flags: u32,
     ptr: *mut (),
-    _lifetime: PhantomData<&'a [u8]>,
 }
 
 pub struct StaticBufferDescriptors<'a> {
-    descriptors: *mut Descriptor<'a>,
+    descriptors: *mut Descriptor,
+    _lifetime: PhantomData<&'a mut Descriptor>
 }
 
 impl<'a> StaticBufferDescriptors<'a> {
     unsafe fn new(ptr: *mut u32) -> Self {
         Self {
-            descriptors: ptr as *mut Descriptor<'a>,
+            descriptors: ptr as *mut Descriptor,
+            _lifetime: PhantomData,
         }
     }
 
@@ -63,7 +64,6 @@ impl<'a> StaticBufferDescriptors<'a> {
             self.descriptors.add(index).write(Descriptor {
                 flags,
                 ptr: data.as_ptr() as *mut (),
-                _lifetime: PhantomData,
             })
         }
     }
