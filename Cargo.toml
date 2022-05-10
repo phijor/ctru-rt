@@ -15,7 +15,6 @@ panic = "abort"
 [dependencies]
 ctru-rt-macros = { path = "ctru-rt-macros" }
 linked_list_allocator = "0.9"
-volatile = "0.2"
 log = { version = "0.4", default-features = false, features = ["max_level_trace", "release_max_level_info"] }
 lock_api = "0.4.2"
 spin = { version = "0.9.3", default-features = false, features = ["lazy", "rwlock"] }

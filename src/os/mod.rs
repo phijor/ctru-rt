@@ -7,7 +7,6 @@ use crate::{result::Result, svc};
 use core::{fmt, marker::PhantomData, num::NonZeroU32};
 
 use log::debug;
-use volatile::ReadOnly;
 
 pub mod cfgmem;
 pub mod mem;
@@ -159,7 +158,7 @@ pub enum MemoryRegion {
 
 impl MemoryRegion {
     pub fn size(&self) -> usize {
-        let cfgmem_ptr: *const ReadOnly<usize> = match self {
+        let cfgmem_ptr = match self {
             MemoryRegion::All => {
                 return MemoryRegion::Application.size()
                     + MemoryRegion::System.size()
@@ -170,7 +169,7 @@ impl MemoryRegion {
             MemoryRegion::Base => cfgmem::BASEMEMALLOC,
         };
 
-        unsafe { cfgmem_ptr.read() }.read()
+        cfgmem_ptr.read()
     }
 
     pub fn used(&self) -> Result<u64> {

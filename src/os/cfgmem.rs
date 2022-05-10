@@ -2,11 +2,30 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use volatile::ReadOnly;
+#[derive(Debug, Clone, Copy)]
+pub struct CfgMemPointer<T> {
+    addr: usize,
+    _size: PhantomData<T>,
+}
+
+impl<T> CfgMemPointer<T> {
+    pub const unsafe fn new(addr: usize) -> Self {
+        Self {
+            addr,
+            _size: PhantomData,
+        }
+    }
+
+    pub fn read(&self) -> T {
+        unsafe { ::core::ptr::read_volatile(self.addr as *const T) }
+    }
+}
+
+use core::marker::PhantomData;
+
 macro_rules! cfgmem_entry {
     ($addr: expr, $name: ident, $width: ty) => {
-        pub const $name: *const ReadOnly<$width> =
-            $addr as *const $width as *const ReadOnly<$width>;
+        pub const $name: CfgMemPointer<$width> = unsafe { CfgMemPointer::new($addr) };
     };
 }
 
