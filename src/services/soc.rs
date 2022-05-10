@@ -81,7 +81,7 @@ impl Soc {
         SocketError::into_result(reply.read_result())
     }
 
-    pub fn accept(&self, fd: &SocketFd<'_>) -> SystemResult<SocketAddress> {
+    pub fn accept(&self, fd: &SocketFd<'_>) -> Result<SocketAddress> {
         let mut address_data = [0; 0x1c];
 
         let tls = tls::get_thread_local_storage();
@@ -93,7 +93,8 @@ impl Soc {
             .parameter(fd)
             .parameter(address_data.len())
             .translate_parameter(ThisProcessId)
-            .dispatch(self.handle.handle())?;
+            .dispatch(self.handle.handle())
+            .map_err(SocketError::SystemErr)?;
 
         unimplemented!()
     }
