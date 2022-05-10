@@ -114,9 +114,7 @@ impl AtomicHandle {
 impl Drop for AtomicHandle {
     fn drop(&mut self) {
         let raw_handle = core::mem::replace(self.0.get_mut(), CLOSED_HANDLE);
-        let handle = unsafe { Handle::new(raw_handle) };
-
-        drop(handle)
+        let _ = svc::close_handle(WeakHandle::new(raw_handle));
     }
 }
 
