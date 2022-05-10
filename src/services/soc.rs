@@ -81,14 +81,15 @@ impl Soc {
         SocketError::into_result(reply.read_result())
     }
 
-    pub fn accept(&self, fd: &SocketFd<'_>) -> SystemResult<SocketAddress> {
+    pub fn accept(&self, fd: &SocketFd<'_>) -> Result<SocketAddress> {
         let mut address_data = [0; 0x1c];
 
         let _reply = IpcRequest::command(0x4)
             .parameter(fd)
             .parameter(address_data.len())
             .translate_parameter(ThisProcessId)
-            .dispatch_with_receive_buffers(&self.handle, &mut [&mut address_data])?;
+            .dispatch_with_receive_buffers(&self.handle, &mut [&mut address_data])
+            .map_err(SocketError::SystemErr)?;
 
         unimplemented!()
     }
