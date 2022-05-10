@@ -5,7 +5,7 @@
 #![no_std]
 #![no_main]
 
-use core::{fmt::Write, panic::PanicInfo};
+use core::{fmt::Write, panic::PanicInfo, time::Duration};
 
 use log::{error, info};
 
@@ -15,8 +15,9 @@ use ctru_rt::{
     heap::{PageAlignError, PageAlignedBuffer},
     ports::srv::Srv,
     result::{ErrorCode, Level, Module, Result, Summary},
+    services::ac::Ac,
     services::soc::{Domain, Protocol, Soc, Type},
-    svc::UserBreakReason,
+    svc::{sleep_thread, Timeout, UserBreakReason},
 };
 
 #[panic_handler]
@@ -32,6 +33,9 @@ fn run() -> Result<()> {
     let srv = Srv::init()?;
 
     let _ = info!("Initialized srv: {:#0x?}", srv);
+
+    let ac = Ac::init(&srv)?;
+    let _ = info!("Initialized ac: {:#0x?}", ac);
 
     let buffer = PageAlignedBuffer::allocate(0x4000).map_err(|e| match e {
         PageAlignError::Alloc => {
@@ -58,9 +62,12 @@ fn main() {
     let _ = ctru_rt::debug::init_log();
 
     match run() {
-        Ok(_) => {}
+        Ok(_) => {
+            let _ = info!("Ran successfully");
+        }
         Err(e) => {
             let _ = error!("Failed to run: {:?}", e);
         }
     }
+    sleep_thread(Timeout::forever());
 }
