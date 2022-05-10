@@ -14,8 +14,9 @@ use ctru_rt::{
     heap::{PageAlignError, PageAlignedBuffer},
     ports::srv::Srv,
     result::{ErrorCode, Level, Module, Result, Summary},
+    services::ac::Ac,
     services::soc::{Domain, Protocol, Soc, Type},
-    svc::sleep_thread,
+    svc::{Timeout, sleep_thread},
 };
 
 #[panic_handler]
@@ -27,6 +28,9 @@ fn run() -> Result<()> {
     let srv = Srv::init()?;
 
     info!("Initialized srv: {:#0x?}", srv);
+
+    let ac = Ac::init(&srv)?;
+    info!("Initialized ac: {:#0x?}", ac);
 
     let buffer = PageAlignedBuffer::allocate(0x4000).map_err(|e| match e {
         PageAlignError::Alloc => {
@@ -55,9 +59,12 @@ fn main() {
     let _ = ctru_rt::debug::init_log();
 
     match run() {
-        Ok(_) => {}
+        Ok(_) => {
+            info!("Ran successfully");
+        }
         Err(e) => {
             error!("Failed to run: {:?}", e);
         }
     }
+    sleep_thread(Timeout::forever());
 }
