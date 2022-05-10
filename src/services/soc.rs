@@ -34,10 +34,10 @@ impl Soc {
                 MemoryPermission::Rw,
             )?
         };
-        debug!("Got buffer handle: {:?}", buffer_handle);
+        debug!("Got buffer handle: {:08x?}", buffer_handle);
         let handle = srv.get_service_handle("soc:U")?;
 
-        debug!("Got service handle: {:?}", handle);
+        debug!("Got service handle: {:08x?}", handle);
         let _reply = IpcRequest::command(0x1)
             .parameter(buffer.size())
             .translate_parameter(ThisProcessId)
