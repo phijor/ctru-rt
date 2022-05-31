@@ -62,7 +62,7 @@ impl Srv {
 
     pub fn register_service(&self, service_name: &str, max_sessions: u32) -> Result<Handle> {
         let ((name0, name1), len) = unsafe { write_str_param(service_name) };
-        let mut reply = IpcRequest::command(0x2)
+        let mut reply = IpcRequest::command(0x3)
             .parameters(&[name0, name1, len, max_sessions])
             .dispatch(self.handle.borrow_handle())?
             .finish_results();
@@ -72,7 +72,7 @@ impl Srv {
 
     pub fn unregister_service(&self, service_name: &str) -> Result<()> {
         let ((name0, name1), len) = unsafe { write_str_param(service_name) };
-        let _reply = IpcRequest::command(0x3)
+        let _reply = IpcRequest::command(0x4)
             .parameters(&[name0, name1, len])
             .dispatch(self.borrow_handle())?;
 
