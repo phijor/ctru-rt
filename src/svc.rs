@@ -13,7 +13,10 @@ use crate::{
 };
 
 use core::arch::asm;
-use core::{convert::TryInto, time::Duration};
+use core::{
+    convert::{TryFrom, TryInto},
+    time::Duration,
+};
 
 use ctru_rt_macros::svc;
 
@@ -216,19 +219,36 @@ pub fn wait_synchronization_many(
     handles: &[WeakHandle],
     wait_all: bool,
     timeout: Timeout,
-) -> Result<isize> {
+) -> Result<i32> {
     let (ns_high, ns_low) = (timeout.reg_high(), timeout.reg_low());
     let num_handles = handles.len();
     let handles: *const WeakHandle = handles.as_ptr();
 
-    let signaled =
-        unsafe { svc!(0x25: (ns_low, handles, num_handles, wait_all, ns_high) -> usize) }?
-            as *const WeakHandle;
+    let signaled = unsafe { svc!(0x25: (ns_low, handles, num_handles, wait_all, ns_high) -> i32) }?;
 
-    if signaled.is_null() {
-        Ok(-1)
-    } else {
-        Ok(unsafe { signaled.offset_from(handles) })
+    Ok(signaled)
+}
+
+const WAIT_FIRST: bool = false;
+const WAIT_ALL: bool = true;
+
+pub fn wait_synchronization_all(handles: &[WeakHandle], timeout: Timeout) -> Result<()> {
+    let _ = wait_synchronization_many(handles, WAIT_ALL, timeout)?;
+
+    Ok(())
+}
+
+pub fn wait_synchronization_any(handles: &[WeakHandle], timeout: Timeout) -> Result<usize> {
+    let signaled = wait_synchronization_many(handles, WAIT_ALL, timeout)?;
+
+    match usize::try_from(signaled) {
+        Ok(index) => Ok(index),
+        Err(_) => panic!(
+            "svc::wait_synchronization_any returned negative handle index {}, \
+            expected a non-negative index into a list of {} handles",
+            signaled,
+            handles.len(),
+        ),
     }
 }
 
