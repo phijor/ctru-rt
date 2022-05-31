@@ -220,8 +220,9 @@ pub fn wait_synchronization_many(
     let num_handles = handles.len();
     let handles: *const WeakHandle = handles.as_ptr();
 
-    let signaled = unsafe { svc!(0x25: (ns_low, handle, num_handles, wait_all, ns_high) -> usize) }?
-        as *const WeakHandle;
+    let signaled =
+        unsafe { svc!(0x25: (ns_low, handles, num_handles, wait_all, ns_high) -> usize) }?
+            as *const WeakHandle;
 
     if signaled.is_null() {
         Ok(-1)
