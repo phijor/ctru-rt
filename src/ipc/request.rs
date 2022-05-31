@@ -19,7 +19,7 @@ pub(crate) struct CommandBufferWriter {
 }
 
 impl CommandBufferWriter {
-    #[inline]
+    #[inline(always)]
     pub(crate) fn write(&mut self, arg: u32) {
         if self.buf.range().contains(&(self.end_ptr as *const u32)) {
             unsafe { self.end_ptr.write(arg) };

@@ -142,12 +142,14 @@ pub trait ResultValue {
 }
 
 impl ResultValue for ResultCode {
+    #[inline(always)]
     fn value(&self) -> u32 {
         self.0
     }
 }
 
 impl ResultValue for ErrorCode {
+    #[inline(always)]
     fn value(&self) -> u32 {
         self.0.into()
     }

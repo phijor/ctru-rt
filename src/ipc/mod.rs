@@ -136,30 +136,35 @@ pub(crate) trait TranslateResult {
 }
 
 impl IpcParameter for u32 {
+    #[inline(always)]
     fn encode(&self) -> u32 {
         *self
     }
 }
 
 impl IpcResult for u32 {
+    #[inline(always)]
     fn decode(result: u32) -> Self {
         result
     }
 }
 
 impl IpcParameter for usize {
+    #[inline(always)]
     fn encode(&self) -> u32 {
         *self as u32
     }
 }
 
 impl IpcParameter for ResultCode {
+    #[inline(always)]
     fn encode(&self) -> u32 {
         self.value()
     }
 }
 
 impl IpcResult for ResultCode {
+    #[inline(always)]
     fn decode(result: u32) -> Self {
         ResultCode::from(result)
     }
@@ -172,7 +177,7 @@ const FLAG_MOVE_HANDLE: u32 = 1 << 4;
 const FLAG_REPLACE_PID: u32 = 1 << 5;
 
 impl TranslateParameter for Handle {
-    #[inline]
+    #[inline(always)]
     fn encode(self, cmdbuf: &mut CommandBufferWriter) {
         let handle: [Handle; 1] = unsafe { core::mem::transmute(self) };
         handle.encode(cmdbuf)
@@ -219,6 +224,7 @@ impl<const N: usize> TranslateResult for [Handle; N] {
 }
 
 impl TranslateResult for Handle {
+    #[inline(always)]
     unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self {
         let header = cmdbuf.read();
         let num_handles = (header >> 26) + 1;
@@ -229,6 +235,7 @@ impl TranslateResult for Handle {
 }
 
 impl<'h, const N: usize> TranslateParameter for [WeakHandle<'h>; N] {
+    #[inline(always)]
     fn encode(self, cmdbuf: &mut CommandBufferWriter) {
         if N == 0 {
             return;
@@ -244,6 +251,7 @@ impl<'h, const N: usize> TranslateParameter for [WeakHandle<'h>; N] {
 }
 
 impl<'h> TranslateParameter for WeakHandle<'h> {
+    #[inline(always)]
     fn encode(self, cmdbuf: &mut CommandBufferWriter) {
         let header = TYPE_HANDLE;
         cmdbuf.write(header);
