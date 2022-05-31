@@ -372,4 +372,64 @@ pub mod spin {
     }
 
     pub struct StickyEventClearedError;
+
+    #[derive(Debug)]
+    pub struct OneShotEvent(RwLock<State>);
+
+    impl OneShotEvent {
+        pub const fn new() -> Self {
+            Self(RwLock::new(State::Cleared))
+        }
+
+        pub fn signal(&self) -> Result<()> {
+            let lock = self.0.upgradeable_read();
+            match *lock {
+                State::Signaled => Ok(()),
+                State::Cleared => {
+                    let mut lock = lock.upgrade();
+                    let state = &mut *lock;
+                    *state = State::Signaled;
+                    ARBITER.wake_up(state, 1, Timeout::forever())?;
+                    Ok(())
+                }
+            }
+        }
+
+        pub fn clear(&self) {
+            let lock = self.0.upgradeable_read();
+            match *lock {
+                State::Cleared => {}
+                State::Signaled => {
+                    *lock.upgrade() = State::Cleared;
+                }
+            }
+        }
+
+        pub fn wait(&self) {
+            loop {
+                let state = self.0.upgradeable_read();
+                match *state {
+                    State::Cleared => {
+                        ARBITER.wait_if_less_than(&*state, State::Signaled).ok();
+                    }
+                    State::Signaled => {
+                        if let Ok(mut state) = state.try_upgrade() {
+                            *state = State::Cleared;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        pub fn try_wait(&self) -> core::result::Result<(), StickyEventClearedError> {
+            todo!()
+            // let state = self.0.read();
+
+            // match *state {
+            //     State::Cleared => Err(StickyEventClearedError),
+            //     State::Signaled => Ok(()),
+            // }
+        }
+    }
 }
