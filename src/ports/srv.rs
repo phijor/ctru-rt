@@ -7,6 +7,7 @@ use crate::{
     os::{BorrowHandle, Handle},
     result::Result,
     svc,
+    util::OrdBounds,
 };
 
 use ctru_rt_macros::EnumCast;
@@ -175,7 +176,7 @@ unsafe fn write_str_param(s: &str) -> ((u32, u32), u32) {
     let mut buf: Buf = Buf { words: [0; 2] };
 
     let s_bytes = s.as_bytes();
-    let n = buf.bytes.len().min(s_bytes.len());
+    let n = buf.bytes.len().at_most(s_bytes.len());
 
     buf.bytes[..n].copy_from_slice(&s_bytes[..n]);
     ((buf.words[0], buf.words[1]), n as u32)

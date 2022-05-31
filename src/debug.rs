@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::svc::{output_debug_bytes, output_debug_string};
+use crate::util::OrdBounds;
 
 use log::{Level, Log, Metadata, Record};
 
@@ -73,12 +74,12 @@ impl<const N: usize> fmt::Write for FixedSizeBufferWriter<N> {
         let bytes = s.as_bytes();
         let remaining = self.remaining();
 
-        let printed = &bytes[..bytes.len().min(remaining.len())];
+        let printed = &bytes[..bytes.len().at_most(remaining.len())];
 
         remaining[..printed.len()].copy_from_slice(printed);
 
         self.pos += printed.len();
-        self.pos = self.pos.min(N);
+        self.pos = self.pos.at_most(N);
 
         Ok(())
     }

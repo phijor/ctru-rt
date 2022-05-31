@@ -78,4 +78,22 @@ pub mod util {
 
         fn as_value(&self) -> Self::Value;
     }
+
+    pub(crate) trait OrdBounds: Ord {
+        fn at_most(self, upper_bound: Self) -> Self;
+        fn at_least(self, lower_bound: Self) -> Self;
+    }
+
+    impl<T> OrdBounds for T
+    where
+        T: Ord,
+    {
+        fn at_most(self, upper_bound: Self) -> Self {
+            self.min(upper_bound)
+        }
+
+        fn at_least(self, lower_bound: Self) -> Self {
+            self.max(lower_bound)
+        }
+    }
 }
