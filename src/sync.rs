@@ -66,6 +66,11 @@ impl Event {
         let handles: &[WeakHandle] = unsafe { core::mem::transmute(events) };
         svc::wait_synchronization_any(handles, timeout)
     }
+
+    pub fn duplicate(&self) -> Result<Self> {
+        let duplicated = svc::duplicate_handle(self.borrow_handle())?;
+        Ok(Self { handle: duplicated })
+    }
 }
 
 #[derive(Debug)]
