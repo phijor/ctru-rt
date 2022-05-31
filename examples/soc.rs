@@ -5,7 +5,7 @@
 #![no_std]
 #![no_main]
 
-use core::{fmt::Write, panic::PanicInfo, time::Duration};
+use core::{fmt::Write, panic::PanicInfo};
 
 use log::{error, info};
 
@@ -15,8 +15,8 @@ use ctru_rt::{
     heap::{PageAlignError, PageAlignedBuffer},
     ports::srv::Srv,
     result::{ErrorCode, Level, Module, Result, Summary},
-    svc::{sleep_thread, UserBreakReason},
     services::soc::{Domain, Protocol, Soc, Type},
+    svc::UserBreakReason,
 };
 
 #[panic_handler]
@@ -28,6 +28,7 @@ fn panic_handler(info: &PanicInfo) -> ! {
 }
 
 fn run() -> Result<()> {
+    info!("Initializing srv...");
     let srv = Srv::init()?;
 
     let _ = info!("Initialized srv: {:#0x?}", srv);
@@ -48,10 +49,8 @@ fn run() -> Result<()> {
 
     info!("gethostid() = {:03?}", soc.gethostid());
 
-    loop {
-        info!("Done...");
-        sleep_thread(Duration::from_secs(1).into());
-    }
+    info!("Done...");
+    Ok(())
 }
 
 #[entry]
