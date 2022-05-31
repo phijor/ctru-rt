@@ -30,6 +30,10 @@ impl Event {
         Ok(Self { handle })
     }
 
+    pub unsafe fn from_handle(handle: Handle) -> Self {
+        Self { handle }
+    }
+
     pub fn borrow_handle(&self) -> WeakHandle {
         self.handle.handle()
     }
