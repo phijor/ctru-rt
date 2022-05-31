@@ -1,5 +1,4 @@
-/* vim: ft=armasm:
-*/
+/* vim: ft=arm: */
 /*--------------------------------------------------------------------------------
 	This Source Code Form is subject to the terms of the Mozilla Public License,
 	v. 2.0. If a copy of the MPL was not distributed with this file, You can
@@ -38,6 +37,17 @@ __system_runflags:
 startup:
 	@ Save return address
 	mov r4, lr
+
+    @ Zero bss section
+    ldr r0, =__bss_start__
+    ldr r1, =__bss_end__
+    mov r2, #0
+zero_bss:
+    cmp r1, r0
+    beq end_zero_bss
+    stm r0!, {r2}
+    b zero_bss
+end_zero_bss:
 
 	@ Jump to user code
 	bl _ctru_rt_start

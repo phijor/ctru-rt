@@ -47,16 +47,6 @@ pub use ctru_rt_macros::entry;
 
 #[no_mangle]
 unsafe extern "C" fn _ctru_rt_start() {
-    extern "C" {
-        static mut __bss_start__: u32;
-        static mut __bss_end__: u32;
-    }
-
-    let bss_start = &mut __bss_start__;
-    let bss_end = &mut __bss_end__;
-    r0::zero_bss(bss_start, bss_end);
-    crate::early_debug!("Zeroed BSS: [{:p}, {:p})", bss_start, bss_end);
-
     crate::heap::init().expect("Failed to initialize heap");
     crate::early_debug!("Mapped heap.");
     crate::graphics::vram::init();
