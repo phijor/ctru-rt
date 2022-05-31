@@ -44,26 +44,84 @@ impl ThreadPacket {
 }
 
 #[derive(Debug)]
-pub struct Thread {
-    handle: Handle,
-    memory_start: *mut u8,
-    memory_layout: Layout,
+struct ReturnValue<T>(*mut T);
+
+impl<T> ReturnValue<T> {
+    fn new(ptr: *mut T) -> Self {
+        Self(ptr)
+    }
+
+    unsafe fn store(self, return_value: T) {
+        core::ptr::write(self.0, return_value)
+    }
 }
 
-impl Thread {
-    pub fn join(self) -> Result<()> {
-        let Self {
-            handle,
-            memory_start,
-            memory_layout,
-        } = self;
+unsafe impl<T> Send for ReturnValue<T> where T: Send + 'static {}
+
+#[derive(Debug)]
+struct ThreadMemory<T> {
+    allocated: *mut u8,
+    stack_top: *mut u8,
+    return_value: *mut T,
+    layout: Layout,
+}
+
+impl<T> ThreadMemory<T> {
+    fn allocate(stack_size: usize) -> Self {
+        let layout = Layout::array::<u8>(align_to(stack_size, 8))
+            .unwrap()
+            .align_to(8)
+            .unwrap();
+        let stack_size = layout.size();
+
+        let (layout, rv_offset) = layout.extend(Layout::new::<T>()).unwrap();
+
+        let allocated = unsafe { alloc::alloc::alloc(layout) };
+
+        let stack_top = unsafe { allocated.add(stack_size) };
+        let return_value = unsafe { allocated.add(rv_offset) as *mut T };
+
+        Self {
+            allocated,
+            stack_top,
+            return_value,
+            layout,
+        }
+    }
+
+    unsafe fn dealloc(self) {
+        alloc::alloc::dealloc(self.allocated, self.layout)
+    }
+}
+
+#[derive(Debug)]
+#[must_use = "Dropping a JoinHandle leaks the associated thread and its resources"]
+pub struct JoinHandle<T> {
+    handle: Handle,
+    memory: ThreadMemory<T>,
+}
+
+impl<T> JoinHandle<T>
+where
+    T: Send + 'static,
+{
+    pub fn join(self) -> Result<T> {
+        let Self { handle, memory } = self;
         svc::wait_synchronization(handle.borrow_handle(), Timeout::forever())?;
+
+        // SAFETY: The thread using this memory exited.
+        // We own the only pointer to the location of the return value.
+        let return_value = unsafe { memory.return_value.read() };
 
         // SAFETY: The thread using this memory exited, so we have exclusive access and are free to
         // deallocate it.
-        unsafe { alloc::alloc::dealloc(memory_start, memory_layout) };
+        unsafe { memory.dealloc() };
 
-        Ok(())
+        Ok(return_value)
+    }
+
+    pub fn is_running(&self) -> bool {
+        svc::wait_synchronization(self.handle.borrow_handle(), Timeout::none()).is_err()
     }
 }
 #[derive(Debug)]
@@ -93,31 +151,26 @@ impl ThreadBuilder {
         Self { priority, ..self }
     }
 
-    fn allocate_thread_memory(&self) -> (*mut u8, Layout) {
-        let layout = Layout::array::<u8>(align_to(self.stack_size, 8))
-            .unwrap()
-            .align_to(8)
-            .unwrap();
-
-        let ptr = unsafe { alloc::alloc::alloc(layout) };
-        (ptr, layout)
-    }
-
-    pub fn spawn<F>(self, f: F) -> Result<Thread>
+    pub fn spawn<F, T>(self, f: F) -> Result<JoinHandle<T>>
     where
-        F: FnOnce(),
+        F: FnOnce() -> T,
         F: Send + 'static,
+        T: Send + 'static,
     {
-        let (memory_start, memory_layout) = self.allocate_thread_memory();
+        let thread_memory = ThreadMemory::allocate(self.stack_size);
 
-        let stack_top = unsafe { memory_start.add(memory_layout.size()) };
+        let return_value = ReturnValue::new(thread_memory.return_value);
 
-        let packet = ThreadPacket::new(f);
+        let wrapper = move || unsafe {
+            let rv: T = f();
+            return_value.store(rv)
+        };
+        let packet = ThreadPacket::new(wrapper);
         let argument = ThreadPacket::into_argument(packet);
 
         debug!(
-            "Launching thread: priority={}, argument={:p}, stack_top={:p}, processor_id={}",
-            self.priority, argument as *const (), stack_top, self.processor_id
+            "Launching thread: priority={}, argument={:p}, mem_start={:p}, stack_top={:p}, return_value={:p}, processor_id={}",
+            self.priority, argument as *const (), thread_memory.allocated, thread_memory.stack_top,  thread_memory.return_value, self.processor_id
         );
 
         let handle = unsafe {
@@ -125,19 +178,23 @@ impl ThreadBuilder {
                 self.priority,
                 _ctru_rt_thread_start,
                 argument,
-                stack_top,
+                thread_memory.stack_top,
                 self.processor_id,
             )?
         };
 
-        Ok(Thread {
+        Ok(JoinHandle {
             handle,
-            memory_start,
-            memory_layout,
+            memory: thread_memory,
         })
     }
 }
 
-pub fn spawn<F: FnOnce() + Send + 'static>(f: F) -> Result<Thread> {
+pub fn spawn<F, T>(f: F) -> Result<JoinHandle<T>>
+where
+    F: FnOnce() -> T,
+    F: Send + 'static,
+    T: Send + 'static,
+{
     ThreadBuilder::default().spawn(f)
 }
