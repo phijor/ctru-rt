@@ -12,13 +12,15 @@ use syn::{Attribute, Error};
 
 use quote::{format_ident, quote};
 
-pub enum InputArg {
+use itertools::MultiUnzip;
+
+pub enum InputParameterSpec {
     Unused(Token![_]),
     Name(Ident),
     Split(Ident),
 }
 
-impl InputArg {
+impl InputParameterSpec {
     fn parse_split_attr(input: ParseStream) -> Result<Option<()>> {
         let attributes = input.call(Attribute::parse_outer)?;
 
@@ -41,7 +43,7 @@ impl InputArg {
     }
 }
 
-impl Parse for InputArg {
+impl Parse for InputParameterSpec {
     fn parse(input: ParseStream) -> Result<Self> {
         let lookahead = input.lookahead1();
 
@@ -58,28 +60,106 @@ impl Parse for InputArg {
 }
 
 struct InputSpec {
-    arguments: Vec<InputArg>,
+    parameters: Punctuated<InputParameterSpec, Token![,]>,
+}
+
+impl Parse for InputSpec {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let input_spec;
+        let _in_paren = parenthesized!(input_spec in input);
+        let parameters = input_spec.parse_terminated(InputParameterSpec::parse)?;
+
+        Ok(Self { parameters })
+    }
 }
 
 impl InputSpec {
-    fn prelude(&self) -> TokenStream {
-        todo!()
-        // let declarations = self
-        //     .arguments
-        //     .iter()
-        //     .filter_map(|argument| match argument {
-        //         InputArg::Split(argument) => {
-        //             let decl = todo! {};
+    fn parameters(&self) -> Vec<InputParameter> {
+        let mut parameters = vec![];
 
-        //             Some(decl)
-        //         }
-        //         _ => None,
-        //     })
-        //     .collect();
+        for (param_spec, register) in self.parameters.iter().zip(0usize..) {
+            let param = match param_spec {
+                InputParameterSpec::Unused(_) => continue,
+                InputParameterSpec::Name(ident) => InputParameter::new(ident.clone(), register),
+                InputParameterSpec::Split(_) => todo!("Argument splitting not yet implemented"),
+            };
 
-        // quote! {
-        //     #(#declarations)
-        // }
+            parameters.push(param);
+        }
+
+        parameters
+    }
+}
+
+fn register_name(index: usize, span: Span) -> LitStr {
+    LitStr::new(&format!("r{}", index), span)
+}
+
+struct InputParameter {
+    name: Ident,
+    register: usize,
+}
+
+impl InputParameter {
+    fn new(name: Ident, register: usize) -> Self {
+        Self { name, register }
+    }
+
+    fn register_spec(&self) -> TokenStream {
+        let name = &self.name;
+        let reg = register_name(self.register, name.span());
+
+        quote! {
+            in(#reg) IntoRegister::into_register(#name)
+        }
+    }
+}
+
+struct OutputParameter {
+    ident: Ident,
+    ty: Type,
+    register: usize,
+}
+
+impl OutputParameter {
+    fn new(register: usize, ty: Type) -> Self {
+        let ident = format_ident!("__out_r{}", register);
+        Self {
+            ident,
+            ty,
+            register,
+        }
+    }
+
+    fn result() -> Self {
+        Self::new(0, syn::parse_quote!(u32))
+    }
+
+    fn declaration(&self) -> TokenStream {
+        let ident = &self.ident;
+        quote! {
+            let #ident: u32;
+        }
+    }
+
+    fn register_spec(&self) -> TokenStream {
+        let name = &self.ident;
+        let reg = register_name(self.register, name.span());
+
+        quote! {
+            lateout(#reg) #name
+        }
+    }
+
+    fn unzip(zipped: Vec<Self>) -> (Vec<Ident>, Vec<Type>, Vec<TokenStream>, Vec<TokenStream>) {
+        zipped
+            .into_iter()
+            .map(|param| {
+                let decl = param.declaration();
+                let reg = param.register_spec();
+                (param.ident, param.ty, decl, reg)
+            })
+            .multiunzip()
     }
 }
 
@@ -91,37 +171,23 @@ pub enum OutputSpec {
 }
 
 impl OutputSpec {
-    fn declarations(&self) -> Vec<TokenStream> {
-        self.idents()
-            .iter()
-            .map(|ident| {
-                quote! {
-                    let #ident: u32;
-                }
-            })
-            .collect()
-    }
-
-    fn types(&self) -> Vec<Type> {
-        match self {
-            Self::NoReturn(never) => vec![Type::from(never.clone())],
+    fn parameters(&self) -> Option<(OutputParameter, Vec<OutputParameter>)> {
+        let params = match self {
+            Self::NoReturn(_) => return None,
             Self::Unit => vec![],
-            Self::Single(ty) => vec![(**ty).clone()],
-            Self::Multiple(types) => types.elems.iter().cloned().collect(),
-        }
-    }
-
-    fn idents(&self) -> Vec<Ident> {
-        match self {
-            Self::NoReturn(_) | Self::Unit => vec![],
-            Self::Single(_) => vec![format_ident!("__out")],
+            Self::Single(ty) => {
+                vec![OutputParameter::new(1, (**ty).clone())]
+            }
             Self::Multiple(types) => types
                 .elems
                 .iter()
+                .cloned()
                 .zip(1usize..)
-                .map(|(_type, register_index)| format_ident!("__out_r{}", register_index))
+                .map(|(ty, register_index)| OutputParameter::new(register_index, ty))
                 .collect(),
-        }
+        };
+
+        Some((OutputParameter::result(), params))
     }
 }
 
@@ -149,31 +215,11 @@ impl Parse for OutputSpec {
 
 pub struct SvcSpec {
     number: LitInt,
-    input: Punctuated<InputArg, Token![,]>,
+    input: InputSpec,
     output: OutputSpec,
 }
 
 impl SvcSpec {
-    fn register_name(index: usize, span: Span) -> LitStr {
-        LitStr::new(&format!("r{}", index), span)
-    }
-
-    fn input_arg(register_index: usize, name: &Ident) -> TokenStream {
-        let reg = SvcSpec::register_name(register_index, name.span());
-
-        quote! {
-            in(#reg) IntoRegister::into_register(#name)
-        }
-    }
-
-    fn output_arg(register_index: usize, name: &Ident) -> TokenStream {
-        let reg = SvcSpec::register_name(register_index, name.span());
-
-        quote! {
-            lateout(#reg) #name
-        }
-    }
-
     pub fn to_asm_call(&self) -> Result<TokenStream> {
         let svc_num = self.number.base10_parse::<u8>().map_err(|_| {
             Error::new(
@@ -185,55 +231,41 @@ impl SvcSpec {
 
         let inputs = self
             .input
-            .iter()
-            .enumerate()
-            .filter_map(|(register_index, arg)| match arg {
-                InputArg::Unused(_) => None,
-                InputArg::Name(ident) => Some(Self::input_arg(register_index, ident)),
-                InputArg::Split(_) => todo!("Argument splitting not yet implemented"),
-            });
+            .parameters()
+            .into_iter()
+            .map(|p| p.register_spec());
 
-        let asm_call = match self.output {
-            OutputSpec::NoReturn(_) => {
-                quote! { core::arch::asm!(#svc_mnemonic, #(#inputs,)* options(noreturn, nostack)) }
-            }
-            _ => {
-                let result_code = Ident::new("__out_r0_result_code", Span::call_site());
-                let result_register = Self::output_arg(0, &result_code);
+        let asm_call = if let Some((result, output)) = self.output.parameters() {
+            let result_code = result.ident.clone();
+            let result_decl = result.declaration();
+            let result_register = result.register_spec();
 
-                let output_idents = self.output.idents();
-                let output_types = self.output.types();
-                let output_spec =
-                    (1usize..)
-                        .zip(output_idents.iter())
-                        .map(|(register_index, output_ident)| {
-                            Self::output_arg(register_index, output_ident)
-                        });
-                let output_decl = self.output.declarations();
+            let (output_idents, output_types, output_decl, output_spec) =
+                OutputParameter::unzip(output);
 
-                quote! {
-                    {
-                        use crate::result::ResultCode;
-                        use crate::svc::{FromRegister, IntoRegister};
+            quote! {
+                {
+                    use crate::result::ResultCode;
+                    use crate::svc::{FromRegister, IntoRegister};
 
-                        let #result_code: u32;
+                    #result_decl
+                    #(#output_decl)*
 
-                        #(#output_decl)*
+                    core::arch::asm!(
+                        #svc_mnemonic,
+                        #(#inputs,)*
+                        #result_register,
+                        #(#output_spec,)*
+                        options(nostack)
+                    );
 
-                        core::arch::asm!(
-                            #svc_mnemonic,
-                            #(#inputs,)*
-                            #result_register,
-                            #(#output_spec,)*
-                            options(nostack)
-                        );
-
-                        ResultCode::from(#result_code).and_then(||
-                            (#(<#output_types as FromRegister>::from_register(#output_idents)),*)
-                        )
-                    }
+                    ResultCode::from(#result_code).and_then(||
+                        (#(<#output_types as FromRegister>::from_register(#output_idents)),*)
+                    )
                 }
             }
+        } else {
+            quote! { core::arch::asm!(#svc_mnemonic, #(#inputs,)* options(noreturn, nostack)) }
         };
 
         Ok(asm_call)
@@ -245,10 +277,7 @@ impl Parse for SvcSpec {
         let number = call_spec.parse()?;
         let _colon: Token![:] = call_spec.parse()?;
 
-        let input;
-        let _in_paren = parenthesized!(input in call_spec);
-        let input = input.parse_terminated(InputArg::parse)?;
-
+        let input = call_spec.parse()?;
         let output = call_spec.parse()?;
 
         Ok(Self {
@@ -267,8 +296,8 @@ mod tests {
     fn test_parse_input_arg() {
         use syn::parse_quote;
 
-        let input_arg: InputArg = parse_quote!(foo);
+        let input_arg: InputParameterSpec = parse_quote!(foo);
 
-        assert!(matches!(input_arg, InputArg::Name(_)));
+        assert!(matches!(input_arg, InputParameterSpec::Name(_)));
     }
 }
