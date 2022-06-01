@@ -85,7 +85,7 @@ impl InputSpec {
 
 pub enum OutputSpec {
     NoReturn(TypeNever),
-    Single(Type),
+    Single(Box<Type>),
     Multiple(TypeTuple),
 }
 
@@ -104,7 +104,7 @@ impl OutputSpec {
     fn types(&self) -> Vec<Type> {
         match self {
             Self::NoReturn(never) => vec![Type::from(never.clone())],
-            Self::Single(ty) => vec![ty.clone()],
+            Self::Single(ty) => vec![(**ty).clone()],
             Self::Multiple(types) => types.elems.iter().cloned().collect(),
         }
     }
@@ -264,6 +264,6 @@ mod tests {
 
         let input_arg: InputArg = parse_quote!(foo);
 
-        assert_eq!(input_arg, InputArg::Name("foo"));
+        assert!(matches!(input_arg, InputArg::Name(_)));
     }
 }

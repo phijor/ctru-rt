@@ -194,6 +194,8 @@ impl<S> IpcBufBuilder<S> {
     fn build(self) -> TokenStream {
         let buffer = self.buffer;
         let writes = self.writes;
+
+        #[allow(clippy::identity_op)]
         let header =
             (u32::from(self.id) << 16) | (self.normal_params << 6) | (self.translate_params << 0);
 

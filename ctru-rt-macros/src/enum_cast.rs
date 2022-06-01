@@ -51,7 +51,7 @@ impl EnumCast {
                 let variant = Self::parse_variant(variant)?;
                 match Self::parse_variant_expr(&variant)? {
                     None => {
-                        let span = variant.span().clone();
+                        let span = variant.span();
                         variants.push(ValuedVariant {
                             variant,
                             value: LitInt::new(&format!("{}", next_value), span),
@@ -102,7 +102,7 @@ impl EnumCast {
             }
         }
 
-        return Ok(syn::parse_quote!(u32));
+        Ok(syn::parse_quote!(u32))
     }
 
     fn parse_variant(variant: Variant) -> Result<Variant> {

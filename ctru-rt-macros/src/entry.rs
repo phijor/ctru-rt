@@ -9,10 +9,7 @@ use syn::{parse, AttributeArgs, ItemFn, ReturnType, Type, Visibility};
 pub(crate) fn entry(args: AttributeArgs, entry_point: ItemFn) -> TokenStream {
     let sig = &entry_point.sig;
 
-    let vis_inherited = match entry_point.vis {
-        Visibility::Inherited => true,
-        _ => false,
-    };
+    let vis_inherited = matches!(entry_point.vis, Visibility::Inherited);
 
     let valid_return_type = match sig.output {
         ReturnType::Default => true,
@@ -38,13 +35,11 @@ pub(crate) fn entry(args: AttributeArgs, entry_point: ItemFn) -> TokenStream {
             "`#[entry]` function must have signature `[unsafe] fn()` or `[unsafe] fn() -> !`",
         )
         .to_compile_error()
-        .into();
     }
 
     if !args.is_empty() {
         return parse::Error::new(Span::call_site(), "This attribute accepts no arguments")
             .to_compile_error()
-            .into();
     }
 
     let ident = &entry_point.sig.ident;
