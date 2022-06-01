@@ -138,7 +138,7 @@ pub fn sleep_thread(duration: Timeout) {
     let (ns_high, ns_low) = (duration.reg_high(), duration.reg_low());
 
     unsafe {
-        let _ = svc!(0x0a: (ns_low, ns_high) -> ());
+        let _ = svc!(0x0a: (ns_low, ns_high));
     }
 }
 
@@ -151,7 +151,7 @@ pub fn create_mutex(initially_locked: bool) -> Result<Handle> {
 }
 
 pub fn release_mutex(handle: WeakHandle) -> Result<()> {
-    unsafe { svc!(0x14: (handle) -> ()) }
+    unsafe { svc!(0x14: (handle)) }
 }
 
 pub fn create_event(reset_type: ResetType) -> Result<Handle> {
@@ -161,11 +161,11 @@ pub fn create_event(reset_type: ResetType) -> Result<Handle> {
 }
 
 pub fn signal_event(handle: WeakHandle) -> Result<()> {
-    unsafe { svc!(0x18: (handle) -> ()) }
+    unsafe { svc!(0x18: (handle)) }
 }
 
 pub fn clear_event(handle: WeakHandle) -> Result<()> {
-    unsafe { svc!(0x19: (handle) -> ()) }
+    unsafe { svc!(0x19: (handle)) }
 }
 
 pub unsafe fn create_memory_block(
@@ -183,11 +183,11 @@ pub unsafe fn map_memory_block(
     my_permissions: MemoryPermission,
     other_permissions: MemoryPermission,
 ) -> Result<()> {
-    svc!(0x1f: (handle, address, my_permissions, other_permissions) -> ())
+    svc!(0x1f: (handle, address, my_permissions, other_permissions))
 }
 
 pub unsafe fn unmap_memory_block(handle: WeakHandle, addr: usize) -> Result<()> {
-    svc!(0x20: (handle, addr) -> ())
+    svc!(0x20: (handle, addr))
 }
 
 pub fn create_address_arbiter() -> Result<Handle> {
@@ -202,17 +202,17 @@ pub fn arbitrate_address(
     timeout: Timeout,
 ) -> Result<()> {
     let (ns_low, ns_high) = (timeout.reg_low(), timeout.reg_high());
-    unsafe { svc!(0x22: (handle, address, arbitration_type, value, ns_low, ns_high) -> ()) }
+    unsafe { svc!(0x22: (handle, address, arbitration_type, value, ns_low, ns_high)) }
 }
 
 pub fn close_handle(handle: WeakHandle) -> Result<()> {
-    unsafe { svc!(0x23: (handle) -> ()) }
+    unsafe { svc!(0x23: (handle)) }
 }
 
 pub fn wait_synchronization(handle: WeakHandle, timeout: Timeout) -> Result<()> {
     let (ns_high, ns_low) = (timeout.reg_high(), timeout.reg_low());
 
-    unsafe { svc!(0x24: (handle, _, ns_high, ns_low) -> ()) }
+    unsafe { svc!(0x24: (handle, _, ns_high, ns_low)) }
 }
 
 pub fn wait_synchronization_many(
@@ -279,7 +279,7 @@ pub fn connect_to_port(port_name: &str) -> Result<Handle> {
 
 #[inline]
 pub unsafe fn send_sync_request(handle: WeakHandle, command_buffer: *mut u32) -> Result<*mut u32> {
-    svc!(0x32: (handle) -> ())?;
+    svc!(0x32: (handle))?;
     Ok(command_buffer)
 }
 
@@ -309,7 +309,7 @@ pub fn get_resource_limit_values<const N: usize>(
     let values = values.as_mut_ptr();
     let limit_types = limit_types.as_ptr();
 
-    unsafe { svc!(0x39: (values, limits_handle, limit_types, N) -> ()) }
+    unsafe { svc!(0x39: (values, limits_handle, limit_types, N)) }
 }
 
 pub fn get_resource_limit_current_values<const N: usize>(
@@ -320,7 +320,7 @@ pub fn get_resource_limit_current_values<const N: usize>(
     let values = values.as_mut_ptr();
     let limit_types = limit_types.as_ptr();
 
-    unsafe { svc!(0x3a: (values, limits_handle, limit_types, N) -> ()) }
+    unsafe { svc!(0x3a: (values, limits_handle, limit_types, N)) }
 }
 
 #[derive(Debug)]
@@ -347,7 +347,7 @@ pub fn output_debug_bytes(bytes: &[u8]) {
     let ptr = bytes.as_ptr();
     let len = bytes.len();
     unsafe {
-        let _ = svc!(0x3d: (ptr, len) -> ());
+        let _ = svc!(0x3d: (ptr, len));
     }
 }
 

@@ -45,15 +45,15 @@ impl Parse for InputArg {
     fn parse(input: ParseStream) -> Result<Self> {
         let lookahead = input.lookahead1();
 
-        if lookahead.peek(Token![_]) {
-            Ok(Self::Unused(input.parse()?))
+        let input_arg = if lookahead.peek(Token![_]) {
+            Self::Unused(input.parse()?)
+        } else if (Self::parse_split_attr(input)?).is_some() {
+            Self::Split(input.parse()?)
         } else {
-            if let Some(_) = Self::parse_split_attr(input)? {
-                Ok(Self::Split(input.parse()?))
-            } else {
-                Ok(Self::Name(input.parse()?))
-            }
-        }
+            Self::Name(input.parse()?)
+        };
+
+        Ok(input_arg)
     }
 }
 
@@ -85,6 +85,7 @@ impl InputSpec {
 
 pub enum OutputSpec {
     NoReturn(TypeNever),
+    Unit,
     Single(Box<Type>),
     Multiple(TypeTuple),
 }
@@ -104,6 +105,7 @@ impl OutputSpec {
     fn types(&self) -> Vec<Type> {
         match self {
             Self::NoReturn(never) => vec![Type::from(never.clone())],
+            Self::Unit => vec![],
             Self::Single(ty) => vec![(**ty).clone()],
             Self::Multiple(types) => types.elems.iter().cloned().collect(),
         }
@@ -111,7 +113,7 @@ impl OutputSpec {
 
     fn idents(&self) -> Vec<Ident> {
         match self {
-            Self::NoReturn(_) => vec![],
+            Self::NoReturn(_) | Self::Unit => vec![],
             Self::Single(_) => vec![format_ident!("__out")],
             Self::Multiple(types) => types
                 .elems
@@ -125,8 +127,13 @@ impl OutputSpec {
 
 impl Parse for OutputSpec {
     fn parse(input: ParseStream) -> Result<Self> {
-        let lookahead = input.lookahead1();
+        if input.peek(Token![->]) {
+            let _: Token![->] = input.parse()?;
+        } else {
+            return Ok(Self::Unit);
+        }
 
+        let lookahead = input.lookahead1();
         if lookahead.peek(Paren) {
             let types = input.parse()?;
             Ok(Self::Multiple(types))
@@ -241,8 +248,6 @@ impl Parse for SvcSpec {
         let input;
         let _in_paren = parenthesized!(input in call_spec);
         let input = input.parse_terminated(InputArg::parse)?;
-
-        let _arrow: Token![->] = call_spec.parse()?;
 
         let output = call_spec.parse()?;
 
