@@ -214,20 +214,14 @@ impl Parse for OutputSpec {
 }
 
 pub struct SvcSpec {
-    number: LitInt,
+    svc_num: u8,
     input: InputSpec,
     output: OutputSpec,
 }
 
 impl SvcSpec {
-    pub fn to_asm_call(&self) -> Result<TokenStream> {
-        let svc_num = self.number.base10_parse::<u8>().map_err(|_| {
-            Error::new(
-                self.number.span(),
-                "SVC number must be in range 0x00..=0xFF",
-            )
-        })?;
-        let svc_mnemonic = LitStr::new(&format!("svc 0x{:02x}", svc_num), self.number.span());
+    pub fn to_asm_call(&self) -> TokenStream {
+        let svc_mnemonic = LitStr::new(&format!("svc 0x{:02x}", self.svc_num), self.svc_num.span());
 
         let inputs = self
             .input
@@ -268,20 +262,28 @@ impl SvcSpec {
             quote! { core::arch::asm!(#svc_mnemonic, #(#inputs,)* options(noreturn, nostack)) }
         };
 
-        Ok(asm_call)
+        asm_call
     }
 }
 
 impl Parse for SvcSpec {
     fn parse(call_spec: ParseStream) -> Result<Self> {
-        let number = call_spec.parse()?;
+        let svc_num_lit: LitInt = call_spec.parse()?;
+
+        let svc_num = svc_num_lit.base10_parse::<u8>().map_err(|_| {
+            Error::new(
+                svc_num_lit.span(),
+                "SVC number must be in range 0x00..=0xFF",
+            )
+        })?;
+
         let _colon: Token![:] = call_spec.parse()?;
 
         let input = call_spec.parse()?;
         let output = call_spec.parse()?;
 
         Ok(Self {
-            number,
+            svc_num,
             input,
             output,
         })

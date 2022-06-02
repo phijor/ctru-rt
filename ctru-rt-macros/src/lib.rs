@@ -239,9 +239,7 @@ use syn::{parse_macro_input, AttributeArgs, ItemFn};
 pub fn svc(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let call_spec = parse_macro_input!(tokens as SvcSpec);
 
-    let output: proc_macro2::TokenStream = call_spec
-        .to_asm_call()
-        .unwrap_or_else(|err| err.to_compile_error());
+    let output: proc_macro2::TokenStream = call_spec.to_asm_call();
 
     output.into()
 }
