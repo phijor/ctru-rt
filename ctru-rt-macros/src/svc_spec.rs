@@ -3,14 +3,13 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use proc_macro2::{Span, TokenStream};
+use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Paren;
 use syn::{parenthesized, Ident, LitInt, LitStr, Result, Token, Type, TypeNever, TypeTuple};
 use syn::{Attribute, Error};
-
-use quote::{format_ident, quote};
 
 use itertools::MultiUnzip;
 
@@ -60,7 +59,7 @@ impl Parse for InputParameterSpec {
 }
 
 struct InputSpec {
-    parameters: Punctuated<InputParameterSpec, Token![,]>,
+    pub(crate) parameters: Punctuated<InputParameterSpec, Token![,]>,
 }
 
 impl Parse for InputSpec {
@@ -294,12 +293,83 @@ impl Parse for SvcSpec {
 mod tests {
     use super::*;
 
+    use assert_matches::assert_matches;
+    use syn::parse_quote;
+
+    use std::fmt::{self, Debug};
+
+    impl Debug for InputParameterSpec {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Unused(_) => f.debug_tuple("Unused").field(&"_").finish(),
+                Self::Name(ident) => f.debug_tuple("Name").field(ident).finish(),
+                Self::Split(_) => f.debug_tuple("Split").field(&"_").finish(),
+            }
+        }
+    }
+
+    impl Debug for OutputSpec {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::NoReturn(_) => f.debug_tuple("NoReturn").field(&"_").finish(),
+                Self::Unit => write!(f, "Unit"),
+                Self::Single(_) => f.debug_tuple("Single").field(&"_").finish(),
+                Self::Multiple(tuple) => f
+                    .debug_tuple("Multiple")
+                    .field(&format!("[_; {}]", tuple.elems.len()))
+                    .finish(),
+            }
+        }
+    }
+
+    macro_rules! test_spec {
+        ($($name:ident: [ $($spec:tt)* ] => $expected:pat $(if $cond:expr)?),*$(,)?) => {
+            $(
+                #[test]
+                fn $name() {
+                    let spec = parse_quote!{ $($spec)* };
+
+                    assert_matches!(spec, $expected $(if $cond)?);
+                }
+            )*
+        };
+    }
+
+    test_spec! {
+        parse_input_param_named:
+            [foo] => InputParameterSpec::Name(ident) if ident == "foo",
+        parse_input_param_unused:
+            [_] => InputParameterSpec::Unused(_),
+        parse_input_param_split:
+            [#[split] bar] => InputParameterSpec::Split(ident) if ident == "bar",
+    }
+
     #[test]
-    fn test_parse_input_arg() {
-        use syn::parse_quote;
+    fn parse_input_spec() {
+        let spec: InputSpec = parse_quote! { (foo, _, #[split] bar) };
 
-        let input_arg: InputParameterSpec = parse_quote!(foo);
+        let params: [_; 3] = spec
+            .parameters
+            .into_iter()
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("Expected to parse 3 parameters");
 
-        assert!(matches!(input_arg, InputParameterSpec::Name(_)));
+        use InputParameterSpec::*;
+
+        assert_matches!(params, [Name(named), Unused(_), Split(split)] if named == "foo" && split == "bar");
+    }
+
+    test_spec! {
+        parse_output_spec_unit:
+            [] => OutputSpec::Unit,
+        parse_output_spec_no_return:
+            [-> !] => OutputSpec::NoReturn(_),
+        parse_output_spec_single:
+            [-> u32] => OutputSpec::Single(_),
+        parse_output_spec_multiple:
+            [-> (u32, u32)] => OutputSpec::Multiple(tuple) if tuple.elems.len() == 2,
+        parse_output_spec_multiple_empty:
+            [-> ()] => OutputSpec::Multiple(tuple) if tuple.elems.is_empty(),
     }
 }
