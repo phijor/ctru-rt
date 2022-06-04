@@ -8,7 +8,7 @@ use core::ops::Deref;
 use crate::ipc::{IpcParameter, IpcRequest};
 use crate::os::{AsHandle, OwnedHandle, BorrowedHandle};
 use crate::ports::srv::Srv;
-use crate::result::{Result, ERROR_NOT_AUTHORIZED};
+use crate::result::Result;
 use crate::sync::{Event, Mutex, OsMutex};
 
 use ctru_rt_macros::EnumCast;
@@ -98,29 +98,15 @@ impl AsHandle for Apt<'_, '_> {
 
 pub struct AptAccess<'srv> {
     srv: &'srv Srv,
-    service_name_index: u8,
+    service_name_index: usize,
 }
 
 impl<'srv> AptAccess<'srv> {
     fn aquire<'access>(&'access mut self) -> Result<Apt<'access, 'srv>> {
-        let mut result = ERROR_NOT_AUTHORIZED;
-        for (service_name, i) in APT_SERVICE_NAMES
-            .iter()
-            .zip(0..)
-            .skip(self.service_name_index as usize)
-        {
-            match self.srv.get_service_handle(service_name) {
-                Ok(handle) => {
-                    self.service_name_index = i;
-                    return Ok(Apt::new(handle, self));
-                }
-                Err(err) => {
-                    result = err;
-                }
-            }
-        }
+        let (handle, matched_offset) = self.srv.get_service_handle_alternatives(&APT_SERVICE_NAMES[self.service_name_index..])?;
+        self.service_name_index += matched_offset;
 
-        Err(result)
+        Ok(Apt::new(handle, self))
     }
 }
 

@@ -5,7 +5,7 @@
 use crate::{
     ipc::{IpcRequest, ThisProcessId},
     os::{AsHandle, OwnedHandle},
-    result::Result,
+    result::{Result, ERROR_NOT_AUTHORIZED},
     svc,
 };
 
@@ -88,6 +88,25 @@ impl Srv {
             .finish_results();
 
         Ok(unsafe { reply.read_handle() })
+    }
+
+    pub fn get_service_handle_alternatives(
+        &self,
+        service_names: &[&str],
+    ) -> Result<(OwnedHandle, usize)> {
+        let mut result = ERROR_NOT_AUTHORIZED;
+        for (service_name, i) in service_names.iter().zip(0..) {
+            match self.get_service_handle(service_name) {
+                Ok(handle) => {
+                    return Ok((handle, i));
+                }
+                Err(err) => {
+                    result = err;
+                }
+            }
+        }
+
+        Err(result)
     }
 
     pub fn subscribe(&self, notification_id: u32) -> Result<()> {
