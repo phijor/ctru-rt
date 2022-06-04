@@ -170,6 +170,13 @@ impl IpcResult for ResultCode {
     }
 }
 
+impl IpcResult for bool {
+    #[inline(always)]
+    fn decode(result: u32) -> Self {
+        !matches!(result, 0)
+    }
+}
+
 const TYPE_HANDLE: u32 = 0 << 1;
 const TYPE_STATIC_BUFFER: u32 = 1 << 1;
 
