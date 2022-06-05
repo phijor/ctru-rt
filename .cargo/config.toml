@@ -7,3 +7,6 @@ build-std-features = ["compiler-builtins-mem"]
 
 [target.armv6k-nintendo-horizon_ctr-elf]
 runner = "citra-qt"
+rustflags = [
+    "-C", "link-arg=link.x",
+]

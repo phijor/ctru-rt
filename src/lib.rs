@@ -33,6 +33,13 @@ extern crate core;
 
 pub use ctru_rt_macros::entry;
 
+use core::arch::global_asm;
+
+global_asm! {
+    include_str!("../rsrt0.S"),
+    options(raw),
+}
+
 // #[macro_export]
 // macro_rules! entry {
 //     ($entry: path) => {
