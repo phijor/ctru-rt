@@ -177,7 +177,7 @@ impl<'g> Grapics<'g> {
         top.present_buffer(Top, gpu);
         bottom.present_buffer(Bottom, gpu);
 
-        while !gpu.next_event()?.contains(InterruptEvent::VBlank0) {}
+        gpu.wait_for_event(InterruptEvent::VBlank0)?;
 
         info!("Turning on LCD...");
         gpu.set_lcd_force_blank(0x00)?;

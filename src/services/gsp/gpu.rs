@@ -587,6 +587,14 @@ impl Gpu {
         self.sharedmem.wait_event()
     }
 
+    pub fn wait_for_event(&mut self, event: InterruptEvent) -> Result<()> {
+        loop {
+            if self.next_event()?.contains(event) {
+                break Ok(());
+            }
+        }
+    }
+
     pub fn present_buffer(
         &mut self,
         screen: Screen,
