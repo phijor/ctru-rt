@@ -375,11 +375,11 @@ impl Sharedmem {
         fb0: *const u8,
         fb1: *const u8,
         stride: u32,
-        mode: u32,
+        format: u32,
     ) {
         let mut fb_info = unsafe { self.framebuffer_info_for(screen) };
 
-        fb_info.update(active_fb, fb0, fb1, stride, mode)
+        fb_info.update(active_fb, fb0, fb1, stride, format)
     }
 }
 
@@ -594,10 +594,10 @@ impl Gpu {
         fb0: *const u8,
         fb1: *const u8,
         stride: u32,
-        mode: u32,
+        format: u32,
     ) {
         self.sharedmem
-            .present_buffer(screen, active_fb, fb0, fb1, stride, mode)
+            .present_buffer(screen, active_fb, fb0, fb1, stride, format)
     }
 
     pub fn set_lcd_force_blank(&mut self, flags: u8) -> Result<()> {

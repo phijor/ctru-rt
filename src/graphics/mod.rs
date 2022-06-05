@@ -86,7 +86,7 @@ impl Drop for Framebuffer {
 
 #[derive(Debug)]
 struct ScreenConfiguration {
-    format: FramebufferColorFormat,
+    color_format: FramebufferColorFormat,
     dimensions: ScreenDimensions,
     fb0: Framebuffer,
     fb1: Framebuffer,
@@ -96,13 +96,13 @@ struct ScreenConfiguration {
 impl ScreenConfiguration {
     fn new(
         dimensions: ScreenDimensions,
-        format: FramebufferColorFormat,
+        color_format: FramebufferColorFormat,
     ) -> core::result::Result<Self, ()> {
-        let fb0 = Framebuffer::new(dimensions, format)?;
-        let fb1 = Framebuffer::new(dimensions, format)?;
+        let fb0 = Framebuffer::new(dimensions, color_format)?;
+        let fb1 = Framebuffer::new(dimensions, color_format)?;
 
         Ok(Self {
-            format,
+            color_format,
             dimensions,
             fb0,
             fb1,
@@ -111,17 +111,20 @@ impl ScreenConfiguration {
     }
 
     fn stride(&self) -> u32 {
-        (self.dimensions.width as u32) * (self.format.bytes_per_pixel() as u32)
+        (self.dimensions.width as u32) * (self.color_format.bytes_per_pixel() as u32)
     }
 
-    const fn mode(&self, screen: Screen) -> u32 {
-        let mut mode = self.format.to_value() as u32;
+    const fn format(&self, screen: Screen) -> u32 {
+        let mut format: u32;
+
+        format = self.color_format.to_value() as u32;
+
         if let Screen::Top = screen {
-            mode |= 1 << 6; // 2D mode
+            format |= 1 << 6; // 2D mode
         }
 
-        mode |= 0b11_0000_0000; // linear mem buffers
-        mode
+        format |= 0b11_0000_0000; // linear mem buffers
+        format
     }
 
     fn present_buffer(&self, screen: Screen, gpu: &mut Gpu) {
@@ -131,7 +134,7 @@ impl ScreenConfiguration {
             self.fb0.as_ptr(),
             self.fb0.as_ptr(), // not a typo, only 2D mode for now
             self.stride(),
-            self.mode(screen),
+            self.format(screen),
         )
     }
 }
