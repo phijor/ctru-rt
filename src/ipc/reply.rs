@@ -96,4 +96,9 @@ impl IpcReply<state::Translate> {
     pub(crate) unsafe fn read_handle(&mut self) -> OwnedHandle {
         self.read_translate_result()
     }
+
+    #[inline]
+    pub(crate) unsafe fn read_handles<const N: usize>(&mut self) -> [OwnedHandle; N] {
+        self.read_translate_result()
+    }
 }
