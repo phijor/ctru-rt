@@ -608,6 +608,15 @@ impl Gpu {
             .present_buffer(screen, active_fb, fb0, fb1, stride, format)
     }
 
+    pub fn flush_data_cache(&mut self, addr: *const u8, size: usize) -> Result<()> {
+        let _ = IpcRequest::command(0x08)
+            .parameter(addr as u32)
+            .parameter(size)
+            .translate_parameter(WeakHandle::active_process())
+            .dispatch(self.access.borrow_handle())?;
+        Ok(())
+    }
+
     pub fn set_lcd_force_blank(&mut self, flags: u8) -> Result<()> {
         let _ = IpcRequest::command(0x0b)
             .parameter(flags as u32)
