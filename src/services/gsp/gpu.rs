@@ -355,15 +355,15 @@ impl Sharedmem {
     }
 
     unsafe fn framebuffer_info_for(&mut self, screen: Screen) -> FramebufferInfo {
-        const INFO_BASE: isize = 0x80;
-        const SIZE: isize = 0x20;
+        const INFO_BASE: usize = 0x80;
+        const SIZE: usize = 0x20;
         const SCREEN_OFFSET: usize = 0x10;
 
-        let base = self.shared_memory.as_mut_ptr().offset(INFO_BASE);
-        let screen_offset = (screen.to_value() * SCREEN_OFFSET) as isize;
+        let base = self.shared_memory.as_mut_ptr().add(INFO_BASE);
+        let screen_offset = screen.to_value() * SCREEN_OFFSET;
         let info = base
-            .offset(self.gsp_module_thread_index as isize * SIZE)
-            .offset(screen_offset);
+            .add(usize::from(self.gsp_module_thread_index) * SIZE)
+            .add(screen_offset);
 
         FramebufferInfo { info }
     }
