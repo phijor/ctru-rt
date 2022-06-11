@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::str::FromStr;
+
 use darling::FromMeta;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
@@ -18,21 +20,37 @@ use itertools::MultiUnzip;
 
 #[derive(PartialEq, Eq)]
 #[cfg_attr(test, derive(Debug))]
-struct Register(usize);
+pub struct Register(usize);
+
+impl FromStr for Register {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        const ERRMSG: &str = r#"register name does not match format "r{{0..15}}""#;
+        let register_index = s.strip_prefix('r').ok_or(ERRMSG)?;
+
+        let index = register_index.parse().map_err(|_| ERRMSG)?;
+
+        Ok(Register(index))
+    }
+}
 
 impl FromMeta for Register {
     fn from_string(value: &str) -> darling::Result<Self> {
-        let err_invalid_reg_name = || {
-            darling::Error::custom(&format!(
-                r#"expected register name "r{{0..15}}", not "{value}""#
-            ))
-        };
+        value.parse().map_err(|e| {
+            darling::Error::custom(&format!(r#"Invalid register name "{value}": {e}"#))
+        })
+    }
+}
 
-        let register_index = value.strip_prefix('r').ok_or_else(err_invalid_reg_name)?;
+impl Parse for Register {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let register_lit: syn::LitStr = input.parse()?;
 
-        let index = register_index.parse().map_err(|_| err_invalid_reg_name())?;
-
-        Ok(Self(index))
+        register_lit
+            .value()
+            .parse()
+            .map_err(|e| syn::Error::new(register_lit.span(), e))
     }
 }
 
@@ -79,7 +97,10 @@ impl FromMeta for SplitAttribute {
 #[cfg_attr(test, derive(Debug))]
 pub enum InputParameterSpec {
     Unused(Token![_]),
-    Name(Ident),
+    Named {
+        name: Ident,
+        register: Option<Register>,
+    },
     Split(SplitAttribute, Ident),
 }
 
@@ -107,7 +128,17 @@ impl Parse for InputParameterSpec {
         } else if let Some(attr) = Self::parse_split_attr(input)? {
             Self::Split(attr, input.parse()?)
         } else {
-            Self::Name(input.parse()?)
+            let name = input.parse()?;
+
+            let register = if input.lookahead1().peek(Token![in]) {
+                let _: Token![in] = input.parse()?;
+
+                Some(input.parse()?)
+            } else {
+                None
+            };
+
+            Self::Named { name, register }
         };
 
         Ok(input_arg)
@@ -131,13 +162,39 @@ impl Parse for InputSpec {
 
 impl InputSpec {
     fn parameters(&self) -> Vec<InputParameter> {
-        let mut parameters = vec![];
+        let mut parameters: Vec<InputParameter> = vec![];
 
-        for (param_spec, register) in self.parameters.iter().zip(0usize..) {
+        let mut auto_register: usize = 0;
+
+        for param_spec in self.parameters.iter() {
             let param = match param_spec {
-                InputParameterSpec::Unused(_) => continue,
-                InputParameterSpec::Name(ident) => InputParameter::new(ident.clone(), register),
-                InputParameterSpec::Split(_, _) => todo!("Argument splitting not yet implemented"),
+                InputParameterSpec::Unused(_) => {
+                    auto_register += 1;
+                    continue;
+                }
+                InputParameterSpec::Named { name, register } => {
+                    let register = if let Some(register) = register {
+                        if let Some(prev) =
+                            parameters.iter().find(|prev| prev.register == register.0)
+                        {
+                            panic!(
+                                r#"Register r{reg} is already occupied by "{name}""#,
+                                reg = register.0,
+                                name = prev.name,
+                            )
+                        }
+
+                        register.0
+                    } else {
+                        auto_register
+                    };
+                    auto_register = register + 1;
+
+                    InputParameter::new(name.clone(), register)
+                }
+                InputParameterSpec::Split(split_attr, name) => {
+                    todo!("Argument splitting not yet implemented")
+                }
             };
 
             parameters.push(param);
@@ -166,7 +223,7 @@ fn register_name(index: usize, span: Span) -> LitStr {
     LitStr::new(&format!("r{}", index), span)
 }
 
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct InputParameter {
     name: Ident,
     register: usize,
@@ -386,7 +443,9 @@ mod tests {
 
     test_spec! {
         parse_input_param_named:
-            [foo] => InputParameterSpec::Name(ident) if ident == "foo",
+            [foo] => InputParameterSpec::Named { name , .. } if name == "foo",
+        parse_input_param_named_in:
+            [foo in "r4"] => InputParameterSpec::Named { name , register: Some(Register(4)) } if name == "foo",
         parse_input_param_unused:
             [_] => InputParameterSpec::Unused(_),
         parse_input_param_split:
@@ -419,11 +478,41 @@ mod tests {
         assert_matches!(
             params,
             [
-                Name(named),
+                Named { name, .. },
                 Unused(_),
                 Split(SplitAttribute { low: None, high: None }, split),
-            ] if named == "foo" && split == "bar"
+            ] if name == "foo" && split == "bar"
         );
+    }
+
+    #[test]
+    fn parse_input_spec_shuffled() {
+        let spec: InputSpec = parse_quote! { (foo in "r1", bar in "r0") };
+
+        let params: [InputParameter; 2] = spec
+            .parameters()
+            .try_into()
+            .expect("Expected to parse 3 parameters");
+
+        assert_matches!(&params[0], InputParameter { name, register: 1 } if name == "foo");
+        assert_matches!(&params[1], InputParameter { name, register: 0 } if name == "bar");
+    }
+
+    #[test]
+    fn parse_input_spec_skip_or_explicit_register() {
+        let spec_with_skip: InputSpec = parse_quote! { (_, foo, bar) };
+        let spec_with_reg: InputSpec = parse_quote! { (foo in "r1", bar) };
+
+        let with_skip: [_; 2] = spec_with_skip
+            .parameters()
+            .try_into()
+            .expect("One parameter");
+        let with_reg: [_; 2] = spec_with_reg
+            .parameters()
+            .try_into()
+            .expect("One parameter");
+
+        assert_eq!(with_skip, with_reg);
     }
 
     test_spec! {
@@ -454,7 +543,7 @@ mod tests {
             .expect("Expected exactly one named and one unnamed input parameter");
 
         assert_eq!(svc_num, 0xff);
-        assert_matches!(input_params, [Name(named), Unused(_)] if named == "foo");
+        assert_matches!(input_params, [Named { name , .. }, Unused(_)] if name == "foo");
         assert_matches!(output, OutputSpec::Single(_));
     }
 

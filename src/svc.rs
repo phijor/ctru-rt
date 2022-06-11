@@ -98,7 +98,7 @@ pub unsafe fn control_memory(
 
 pub unsafe fn query_memory(addr: usize) -> Result<QueryResult> {
     let (base_process_virtual_address, size, permission, state, page_flags) =
-        svc!(0x02: (_, _, addr) -> (usize, usize, u32, u32, u32))?;
+        svc!(0x02: (addr in "r2") -> (usize, usize, u32, u32, u32))?;
 
     // TODO: yeah, let's hope the kernel always returns valid values here
     let permission = core::mem::transmute(permission);
@@ -143,7 +143,7 @@ pub fn sleep_thread(duration: Timeout) {
 }
 
 pub fn get_thread_priority(handle: BorrowedHandle) -> Result<i32> {
-    unsafe { svc!(0x0b: (_, handle) -> i32) }
+    unsafe { svc!(0x0b: (handle in "r1") -> i32) }
 }
 
 pub fn create_mutex(initially_locked: bool) -> Result<OwnedHandle> {
