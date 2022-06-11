@@ -12,6 +12,7 @@ itertools = "0.10"
 
 [dev-dependencies]
 assert_matches = "1.5.0"
+syn = { version = "1", features = ["full", "extra-traits"] }
 
 [lib]
 proc-macro = true

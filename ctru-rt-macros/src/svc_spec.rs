@@ -13,6 +13,7 @@ use syn::{Attribute, Error};
 
 use itertools::MultiUnzip;
 
+#[cfg_attr(test, derive(Debug))]
 pub enum InputParameterSpec {
     Unused(Token![_]),
     Name(Ident),
@@ -58,6 +59,7 @@ impl Parse for InputParameterSpec {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 struct InputSpec {
     pub(crate) parameters: Punctuated<InputParameterSpec, Token![,]>,
 }
@@ -88,12 +90,28 @@ impl InputSpec {
 
         parameters
     }
+
+    #[cfg(test)]
+    fn into_param_array<const N: usize>(self) -> Option<[InputParameterSpec; N]> {
+        self.parameters
+            .into_iter()
+            .collect::<Vec<_>>()
+            .try_into()
+            .ok()
+    }
+
+    fn emit_register_specs(&self) -> impl Iterator<Item = TokenStream> {
+        self.parameters()
+            .into_iter()
+            .map(|p| p.emit_register_spec())
+    }
 }
 
 fn register_name(index: usize, span: Span) -> LitStr {
     LitStr::new(&format!("r{}", index), span)
 }
 
+#[cfg_attr(test, derive(Debug))]
 struct InputParameter {
     name: Ident,
     register: usize,
@@ -104,7 +122,7 @@ impl InputParameter {
         Self { name, register }
     }
 
-    fn register_spec(&self) -> TokenStream {
+    fn emit_register_spec(&self) -> TokenStream {
         let name = &self.name;
         let reg = register_name(self.register, name.span());
 
@@ -114,6 +132,7 @@ impl InputParameter {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 struct OutputParameter {
     ident: Ident,
     ty: Type,
@@ -162,6 +181,7 @@ impl OutputParameter {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 pub enum OutputSpec {
     NoReturn(TypeNever),
     Unit,
@@ -212,6 +232,7 @@ impl Parse for OutputSpec {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 pub struct SvcSpec {
     svc_num: u8,
     input: InputSpec,
@@ -219,14 +240,13 @@ pub struct SvcSpec {
 }
 
 impl SvcSpec {
+    fn emit_svc_mnemonic(&self) -> LitStr {
+        LitStr::new(&format!("svc 0x{:02x}", self.svc_num), self.svc_num.span())
+    }
     pub fn to_asm_call(&self) -> TokenStream {
-        let svc_mnemonic = LitStr::new(&format!("svc 0x{:02x}", self.svc_num), self.svc_num.span());
+        let svc_mnemonic = self.emit_svc_mnemonic();
 
-        let inputs = self
-            .input
-            .parameters()
-            .into_iter()
-            .map(|p| p.register_spec());
+        let input_specs = self.input.emit_register_specs();
 
         let asm_call = if let Some((result, output)) = self.output.parameters() {
             let result_code = result.ident.clone();
@@ -246,7 +266,7 @@ impl SvcSpec {
 
                     core::arch::asm!(
                         #svc_mnemonic,
-                        #(#inputs,)*
+                        #(#input_specs,)*
                         #result_register,
                         #(#output_spec,)*
                         options(nostack)
@@ -258,7 +278,7 @@ impl SvcSpec {
                 }
             }
         } else {
-            quote! { core::arch::asm!(#svc_mnemonic, #(#inputs,)* options(noreturn, nostack)) }
+            quote! { core::arch::asm!(#svc_mnemonic, #(#input_specs,)* options(noreturn, nostack)) }
         };
 
         asm_call
@@ -296,32 +316,6 @@ mod tests {
     use assert_matches::assert_matches;
     use syn::parse_quote;
 
-    use std::fmt::{self, Debug};
-
-    impl Debug for InputParameterSpec {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::Unused(_) => f.debug_tuple("Unused").field(&"_").finish(),
-                Self::Name(ident) => f.debug_tuple("Name").field(ident).finish(),
-                Self::Split(_) => f.debug_tuple("Split").field(&"_").finish(),
-            }
-        }
-    }
-
-    impl Debug for OutputSpec {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::NoReturn(_) => f.debug_tuple("NoReturn").field(&"_").finish(),
-                Self::Unit => write!(f, "Unit"),
-                Self::Single(_) => f.debug_tuple("Single").field(&"_").finish(),
-                Self::Multiple(tuple) => f
-                    .debug_tuple("Multiple")
-                    .field(&format!("[_; {}]", tuple.elems.len()))
-                    .finish(),
-            }
-        }
-    }
-
     macro_rules! test_spec {
         ($($name:ident: [ $($spec:tt)* ] => $expected:pat $(if $cond:expr)?),*$(,)?) => {
             $(
@@ -349,10 +343,7 @@ mod tests {
         let spec: InputSpec = parse_quote! { (foo, _, #[split] bar) };
 
         let params: [_; 3] = spec
-            .parameters
-            .into_iter()
-            .collect::<Vec<_>>()
-            .try_into()
+            .into_param_array()
             .expect("Expected to parse 3 parameters");
 
         use InputParameterSpec::*;
@@ -371,5 +362,56 @@ mod tests {
             [-> (u32, u32)] => OutputSpec::Multiple(tuple) if tuple.elems.len() == 2,
         parse_output_spec_multiple_empty:
             [-> ()] => OutputSpec::Multiple(tuple) if tuple.elems.is_empty(),
+    }
+
+    #[test]
+    fn parse_svc_spec() {
+        use InputParameterSpec::*;
+
+        let SvcSpec {
+            svc_num,
+            input,
+            output,
+        } = parse_quote! { 0xff: (foo, _) -> u32 };
+
+        let input_params = input
+            .into_param_array()
+            .expect("Expected exactly one named and one unnamed input parameter");
+
+        assert_eq!(svc_num, 0xff);
+        assert_matches!(input_params, [Name(named), Unused(_)] if named == "foo");
+        assert_matches!(output, OutputSpec::Single(_));
+    }
+
+    #[test]
+    fn parse_svc_spec_invalid_svc_number() {
+        let res: Result<SvcSpec> = syn::parse2(quote!(0x100: ()));
+
+        assert_matches!(res, Err(_));
+    }
+
+    #[test]
+    fn emit_svc_mnemonic() {
+        let spec: SvcSpec = parse_quote!(0xff: ());
+
+        let expected: LitStr = parse_quote! { "svc 0xff" };
+
+        assert_eq!(spec.emit_svc_mnemonic(), expected);
+    }
+
+    #[test]
+    fn input_spec_to_parameters() {
+        let spec: InputSpec = parse_quote! { (foo, _, bar) };
+
+        let [foo, bar]: [InputParameter; 2] = spec
+            .parameters()
+            .try_into()
+            .expect("Expected two parameters, skipping one of three in the spec");
+
+        assert_eq!(foo.name, "foo");
+        assert_eq!(foo.register, 0);
+        // ... skipping r1 ...
+        assert_eq!(bar.name, "bar");
+        assert_eq!(bar.register, 2);
     }
 }
