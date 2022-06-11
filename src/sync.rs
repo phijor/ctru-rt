@@ -34,10 +34,6 @@ impl Event {
         Self { handle }
     }
 
-    pub fn borrow_handle(&self) -> WeakHandle {
-        self.handle.handle()
-    }
-
     pub fn wait(&self, timeout: Timeout) -> Result<()> {
         svc::wait_synchronization(self.borrow_handle(), timeout)
     }
@@ -70,6 +66,12 @@ impl Event {
     pub fn duplicate(&self) -> Result<Self> {
         let duplicated = svc::duplicate_handle(self.borrow_handle())?;
         Ok(Self { handle: duplicated })
+    }
+}
+
+impl BorrowHandle for Event {
+    fn borrow_handle(&self) -> WeakHandle {
+        self.handle.borrow_handle()
     }
 }
 
