@@ -2,44 +2,99 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use darling::FromMeta;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Paren;
-use syn::{parenthesized, Ident, LitInt, LitStr, Result, Token, Type, TypeNever, TypeTuple};
+use syn::{
+    parenthesized, Ident, LitInt, LitStr, NestedMeta, Result, Token, Type, TypeNever, TypeTuple,
+};
 use syn::{Attribute, Error};
 
 use itertools::MultiUnzip;
+
+#[derive(PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+struct Register(usize);
+
+impl FromMeta for Register {
+    fn from_string(value: &str) -> darling::Result<Self> {
+        let err_invalid_reg_name = || {
+            darling::Error::custom(&format!(
+                r#"expected register name "r{{0..15}}", not "{value}""#
+            ))
+        };
+
+        let register_index = value.strip_prefix('r').ok_or_else(err_invalid_reg_name)?;
+
+        let index = register_index.parse().map_err(|_| err_invalid_reg_name())?;
+
+        Ok(Self(index))
+    }
+}
+
+#[derive(Default, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+pub struct SplitAttribute {
+    low: Option<Register>,
+    high: Option<Register>,
+}
+
+impl FromMeta for SplitAttribute {
+    fn from_word() -> darling::Result<Self> {
+        Ok(Self::default())
+    }
+
+    fn from_list(items: &[NestedMeta]) -> darling::Result<Self> {
+        let mut split_attr = Self::default();
+
+        let err_unexpected = Err(darling::Error::custom(
+            r#"Expected attributes "low = {{reg}}" or "high = {{reg}}""#,
+        ));
+
+        for item in items {
+            match item {
+                NestedMeta::Meta(meta) => {
+                    let path = meta.path();
+
+                    if path.is_ident("low") {
+                        split_attr.low = Some(Register::from_meta(meta)?);
+                    } else if path.is_ident("high") {
+                        split_attr.high = Some(Register::from_meta(meta)?);
+                    } else {
+                        return err_unexpected;
+                    }
+                }
+                NestedMeta::Lit(_) => return err_unexpected,
+            }
+        }
+
+        Ok(split_attr)
+    }
+}
 
 #[cfg_attr(test, derive(Debug))]
 pub enum InputParameterSpec {
     Unused(Token![_]),
     Name(Ident),
-    Split(Ident),
+    Split(SplitAttribute, Ident),
 }
 
 impl InputParameterSpec {
-    fn parse_split_attr(input: ParseStream) -> Result<Option<()>> {
-        let attributes = input.call(Attribute::parse_outer)?;
+    fn parse_split_attr(input: ParseStream) -> Result<Option<SplitAttribute>> {
+        for attr in input.call(Attribute::parse_outer)? {
+            if attr.path.is_ident("split") {
+                let meta = attr.parse_meta()?;
+                let split_attr = SplitAttribute::from_meta(&meta)?;
 
-        let attr = match attributes.first() {
-            Some(attr) => attr,
-            None => return Ok(None), // No attribute specified
-        };
-
-        let name = attr
-            .path
-            .get_ident()
-            .ok_or_else(|| Error::new(attr.span(), "Empty attribute"))?;
-        match name.to_string().as_str() {
-            "split" => Ok(Some(())),
-            unknown => Err(Error::new(
-                name.span(),
-                &format!(r#"Unknown attribute "{}", expected "split""#, unknown),
-            )),
+                return Ok(Some(split_attr));
+            }
         }
+
+        Ok(None)
     }
 }
 
@@ -49,8 +104,8 @@ impl Parse for InputParameterSpec {
 
         let input_arg = if lookahead.peek(Token![_]) {
             Self::Unused(input.parse()?)
-        } else if (Self::parse_split_attr(input)?).is_some() {
-            Self::Split(input.parse()?)
+        } else if let Some(attr) = Self::parse_split_attr(input)? {
+            Self::Split(attr, input.parse()?)
         } else {
             Self::Name(input.parse()?)
         };
@@ -82,7 +137,7 @@ impl InputSpec {
             let param = match param_spec {
                 InputParameterSpec::Unused(_) => continue,
                 InputParameterSpec::Name(ident) => InputParameter::new(ident.clone(), register),
-                InputParameterSpec::Split(_) => todo!("Argument splitting not yet implemented"),
+                InputParameterSpec::Split(_, _) => todo!("Argument splitting not yet implemented"),
             };
 
             parameters.push(param);
@@ -335,7 +390,20 @@ mod tests {
         parse_input_param_unused:
             [_] => InputParameterSpec::Unused(_),
         parse_input_param_split:
-            [#[split] bar] => InputParameterSpec::Split(ident) if ident == "bar",
+            [#[split] bar] => InputParameterSpec::Split(split, ident)
+                if split == Default::default() && ident == "bar",
+        parse_input_param_split_registers:
+            [#[split(low = "r0", high = "r4")] bar] => InputParameterSpec::Split(
+                SplitAttribute { low: Some(Register(0)), high: Some(Register(4)) },
+                _
+            ),
+    }
+
+    #[test]
+    fn parse_input_param_split_unknown_attr() {
+        let res = syn::parse2::<InputParameterSpec>(quote!(#[split(unknown = "...") foo]));
+
+        assert_matches!(res, Err(_));
     }
 
     #[test]
@@ -348,7 +416,14 @@ mod tests {
 
         use InputParameterSpec::*;
 
-        assert_matches!(params, [Name(named), Unused(_), Split(split)] if named == "foo" && split == "bar");
+        assert_matches!(
+            params,
+            [
+                Name(named),
+                Unused(_),
+                Split(SplitAttribute { low: None, high: None }, split),
+            ] if named == "foo" && split == "bar"
+        );
     }
 
     test_spec! {
