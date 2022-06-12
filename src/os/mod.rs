@@ -14,6 +14,7 @@ pub mod reslimit;
 pub mod sharedmem;
 
 pub type RawHandle = u32;
+pub type ValidRawHandle = NonZeroU32;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
@@ -55,48 +56,27 @@ impl BorrowedHandle<'_> {
 
 #[repr(transparent)]
 pub struct OwnedHandle {
-    handle: Option<NonZeroU32>,
+    handle: ValidRawHandle,
     // _unsend_marker: PhantomData<*const u32>,
 }
 
 impl OwnedHandle {
-    pub unsafe fn new(raw_handle: RawHandle) -> Self {
-        Self {
-            handle: NonZeroU32::new(raw_handle),
-            // _unsend_marker: PhantomData,
-        }
-    }
-
-    pub const fn new_closed() -> Self {
-        Self {
-            handle: None,
-            // _unsend_marker: PhantomData,
-        }
-    }
-
-    pub fn take(&mut self) -> Self {
-        Self {
-            handle: self.handle.take(),
-            // _unsend_marker: PhantomData,
-        }
+    pub unsafe fn new(raw_handle: RawHandle) -> Option<Self> {
+        let handle = ValidRawHandle::new(raw_handle)?;
+        Some(Self { handle })
     }
 
     pub fn close(&mut self) -> Result<()> {
-        match self.handle {
-            Some(_) => {
-                let result = svc::close_handle(self.borrow_handle());
-                self.handle = None;
-                result
-            }
-            None => Ok(()),
-        }
+        let raw_handle: RawHandle = self.handle.get();
+        debug_assert_ne!(
+            raw_handle, CLOSED_HANDLE,
+            "Calling OwnedHandle::close() on an invalid Handle!"
+        );
+        unsafe { svc::close_handle(raw_handle) }
     }
 
     pub fn handle(&self) -> BorrowedHandle {
-        match self.handle {
-            None => BorrowedHandle::invalid(),
-            Some(h) => BorrowedHandle::new(h.into()),
-        }
+        BorrowedHandle::new(self.handle.get())
     }
 
     pub fn try_duplicate(&self) -> Result<Self> {
@@ -104,13 +84,13 @@ impl OwnedHandle {
     }
 
     pub const fn leak(self) -> RawHandle {
-        let raw_handle = self.handle;
+        let raw_handle = self.handle.get();
+
+        // Do not run the destructor for this handle.
+        // This way, svc::close_handle() is *not* called on the contained RawHandle.
         core::mem::forget(self);
 
-        match raw_handle {
-            Some(h) => h.get(),
-            None => CLOSED_HANDLE,
-        }
+        raw_handle
     }
 }
 
@@ -121,24 +101,15 @@ impl Drop for OwnedHandle {
     }
 }
 
-impl Default for OwnedHandle {
-    fn default() -> Self {
-        Self::new_closed()
-    }
-}
-
 impl fmt::Debug for OwnedHandle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.handle {
-            Some(h) => f.debug_tuple("Handle").field(&h).finish(),
-            None => f.write_str("Handle::invalid()"),
-        }
+        f.debug_tuple("Handle").field(&self.handle).finish()
     }
 }
 
 impl super::svc::FromRegister for OwnedHandle {
     unsafe fn from_register(reg: u32) -> Self {
-        Self::new(reg)
+        OwnedHandle::new(reg).expect("Register contained an invalid Handle")
     }
 }
 

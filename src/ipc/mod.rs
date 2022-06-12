@@ -216,7 +216,8 @@ impl<const N: usize> TranslateResult for [OwnedHandle; N] {
 
         for i in 0..N {
             let handles = &mut *handles.as_mut_ptr();
-            handles[i] = OwnedHandle::new(cmdbuf.read());
+            handles[i] =
+                OwnedHandle::new(cmdbuf.read()).expect("Command buffer contained invalid Handle");
         }
 
         handles.assume_init()
@@ -230,7 +231,7 @@ impl TranslateResult for OwnedHandle {
         let num_handles = (header >> 26) + 1;
         debug_assert_eq!(num_handles, 1);
 
-        Self::new(cmdbuf.read())
+        OwnedHandle::new(cmdbuf.read()).expect("Command buffer contained an invalid Handle")
     }
 }
 

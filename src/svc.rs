@@ -6,7 +6,7 @@ use crate::os::reslimit::LimitType;
 use crate::{
     os::{
         mem::{MemoryOperation, MemoryPermission, QueryResult},
-        OwnedHandle, BorrowedHandle,
+        BorrowedHandle, OwnedHandle, RawHandle
     },
     result::Result,
     sync::{ArbitrationType, ResetType},
@@ -205,8 +205,8 @@ pub fn arbitrate_address(
     unsafe { svc!(0x22: (handle, address, arbitration_type, value, ns_low, ns_high)) }
 }
 
-pub fn close_handle(handle: BorrowedHandle) -> Result<()> {
-    unsafe { svc!(0x23: (handle)) }
+pub unsafe fn close_handle(handle: RawHandle) -> Result<()> {
+    svc!(0x23: (handle))
 }
 
 pub fn wait_synchronization(handle: BorrowedHandle, timeout: Timeout) -> Result<()> {

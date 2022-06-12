@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::os::{BorrowHandle, OwnedHandle, SystemTick, BorrowedHandle, CLOSED_HANDLE};
+use crate::os::{BorrowHandle, BorrowedHandle, OwnedHandle, RawHandle, SystemTick, CLOSED_HANDLE};
 use crate::result::Result;
 use crate::svc::{self, Timeout};
 
@@ -84,15 +84,15 @@ impl AtomicHandle {
     }
 
     const fn new_closed() -> Self {
-        Self::from_handle(OwnedHandle::new_closed())
+        Self(AtomicU32::new(CLOSED_HANDLE))
     }
 
     #[inline]
     unsafe fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> BorrowedHandle {
-        let current = self.0.load(Ordering::Acquire);
+        let current: RawHandle = self.0.load(Ordering::Acquire);
 
         let raw_handle = if current == CLOSED_HANDLE {
-            let new_handle = init().leak();
+            let new_handle: RawHandle = init().leak();
             match self.0.compare_exchange(
                 CLOSED_HANDLE,
                 new_handle,
@@ -101,7 +101,7 @@ impl AtomicHandle {
             ) {
                 Ok(new_handle) => new_handle,
                 Err(old_handle) => {
-                    let _ = svc::close_handle(BorrowedHandle::new(new_handle)).ok();
+                    let _ = svc::close_handle(new_handle).ok();
                     old_handle
                 }
             }
@@ -116,7 +116,7 @@ impl AtomicHandle {
 impl Drop for AtomicHandle {
     fn drop(&mut self) {
         let raw_handle = core::mem::replace(self.0.get_mut(), CLOSED_HANDLE);
-        let _ = svc::close_handle(BorrowedHandle::new(raw_handle));
+        let _ = unsafe { svc::close_handle(raw_handle) };
     }
 }
 

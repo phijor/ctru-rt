@@ -619,10 +619,10 @@ impl AccessRightsToken {
         self.service_handle.handle()
     }
 
-    fn release(&mut self) -> Result<OwnedHandle> {
+    fn release(&mut self) -> Result<()> {
         debug!("Releasing GPU access rights");
         let _ = IpcRequest::command(0x17).dispatch(self.service_handle.borrow_handle())?;
-        Ok(self.service_handle.take())
+        Ok(())
     }
 }
 
