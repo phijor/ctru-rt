@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::early_debug;
-use crate::os::{BorrowHandle, Handle};
+use crate::os::{BorrowHandle, OwnedHandle};
 use crate::result::Result;
 use crate::svc::{self, Timeout};
 
@@ -97,7 +97,7 @@ impl<T> ThreadMemory<T> {
 #[derive(Debug)]
 #[must_use = "Dropping a JoinHandle leaks the associated thread and its resources"]
 pub struct JoinHandle<T> {
-    handle: Handle,
+    handle: OwnedHandle,
     memory: ThreadMemory<T>,
 }
 

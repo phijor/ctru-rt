@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 
 use crate::ipc::{IpcParameter, IpcRequest};
-use crate::os::{BorrowHandle, Handle, WeakHandle};
+use crate::os::{BorrowHandle, OwnedHandle, WeakHandle};
 use crate::ports::srv::Srv;
 use crate::result::{Result, ERROR_NOT_AUTHORIZED};
 use crate::sync::{Event, Mutex, OsMutex};
@@ -43,11 +43,11 @@ impl IpcParameter for AppletAttributes {
 }
 
 pub struct Apt<'access, 'srv> {
-    handle: Handle,
+    handle: OwnedHandle,
     _access: PhantomData<&'access mut AptAccess<'srv>>,
 }
 impl<'access, 'srv> Apt<'access, 'srv> {
-    fn new(handle: Handle, access: &'access mut AptAccess<'srv>) -> Self {
+    fn new(handle: OwnedHandle, access: &'access mut AptAccess<'srv>) -> Self {
         drop(access);
         Self {
             handle,

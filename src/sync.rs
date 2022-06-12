@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::os::{BorrowHandle, Handle, SystemTick, WeakHandle, CLOSED_HANDLE};
+use crate::os::{BorrowHandle, OwnedHandle, SystemTick, WeakHandle, CLOSED_HANDLE};
 use crate::result::Result;
 use crate::svc::{self, Timeout};
 
@@ -21,7 +21,7 @@ pub enum ResetType {
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Event {
-    handle: Handle,
+    handle: OwnedHandle,
 }
 
 impl Event {
@@ -30,7 +30,7 @@ impl Event {
         Ok(Self { handle })
     }
 
-    pub unsafe fn from_handle(handle: Handle) -> Self {
+    pub unsafe fn from_handle(handle: OwnedHandle) -> Self {
         Self { handle }
     }
 
@@ -79,16 +79,16 @@ impl BorrowHandle for Event {
 struct AtomicHandle(AtomicU32);
 
 impl AtomicHandle {
-    const fn from_handle(handle: Handle) -> Self {
+    const fn from_handle(handle: OwnedHandle) -> Self {
         Self(AtomicU32::new(handle.leak()))
     }
 
     const fn new_closed() -> Self {
-        Self::from_handle(Handle::new_closed())
+        Self::from_handle(OwnedHandle::new_closed())
     }
 
     #[inline]
-    unsafe fn get_or_init<F: FnOnce() -> Handle>(&self, init: F) -> WeakHandle {
+    unsafe fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> WeakHandle {
         let current = self.0.load(Ordering::Acquire);
 
         let raw_handle = if current == CLOSED_HANDLE {
@@ -126,8 +126,8 @@ impl Default for AtomicHandle {
     }
 }
 
-impl From<Handle> for AtomicHandle {
-    fn from(handle: Handle) -> Self {
+impl From<OwnedHandle> for AtomicHandle {
+    fn from(handle: OwnedHandle) -> Self {
         Self::from_handle(handle)
     }
 }
@@ -155,7 +155,7 @@ impl OsMutex {
         Ok(Self { handle })
     }
 
-    pub unsafe fn from_handle(handle: Handle) -> Self {
+    pub unsafe fn from_handle(handle: OwnedHandle) -> Self {
         Self {
             handle: handle.into(),
         }

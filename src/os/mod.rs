@@ -46,12 +46,12 @@ impl WeakHandle<'_> {
 }
 
 #[repr(transparent)]
-pub struct Handle {
+pub struct OwnedHandle {
     handle: Option<NonZeroU32>,
     // _unsend_marker: PhantomData<*const u32>,
 }
 
-impl Handle {
+impl OwnedHandle {
     pub unsafe fn new(raw_handle: u32) -> Self {
         Self {
             handle: NonZeroU32::new(raw_handle),
@@ -106,20 +106,20 @@ impl Handle {
     }
 }
 
-impl Drop for Handle {
+impl Drop for OwnedHandle {
     fn drop(&mut self) {
         debug!("Dropping handle {:08x?}", self);
         let _ = self.close();
     }
 }
 
-impl Default for Handle {
+impl Default for OwnedHandle {
     fn default() -> Self {
         Self::new_closed()
     }
 }
 
-impl fmt::Debug for Handle {
+impl fmt::Debug for OwnedHandle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.handle {
             Some(h) => f.debug_tuple("Handle").field(&h).finish(),
@@ -128,13 +128,13 @@ impl fmt::Debug for Handle {
     }
 }
 
-impl super::svc::FromRegister for Handle {
+impl super::svc::FromRegister for OwnedHandle {
     unsafe fn from_register(reg: u32) -> Self {
         Self::new(reg)
     }
 }
 
-impl super::svc::IntoRegister for Handle {
+impl super::svc::IntoRegister for OwnedHandle {
     type Register = u32;
     unsafe fn into_register(self) -> u32 {
         self.leak()
@@ -182,7 +182,7 @@ pub trait BorrowHandle {
     fn borrow_handle(&self) -> WeakHandle;
 }
 
-impl BorrowHandle for Handle {
+impl BorrowHandle for OwnedHandle {
     fn borrow_handle(&self) -> WeakHandle {
         self.handle()
     }

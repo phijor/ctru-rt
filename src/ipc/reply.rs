@@ -4,7 +4,7 @@
 
 use super::{state, CommandBuffer, IpcResult, TranslateResult};
 use crate::ipc::IpcHeader;
-use crate::os::Handle;
+use crate::os::OwnedHandle;
 
 use core::marker::PhantomData;
 
@@ -93,7 +93,7 @@ impl IpcReply<state::Translate> {
     }
 
     #[inline]
-    pub(crate) unsafe fn read_handle(&mut self) -> Handle {
+    pub(crate) unsafe fn read_handle(&mut self) -> OwnedHandle {
         self.read_translate_result()
     }
 }

@@ -6,7 +6,7 @@ use crate::os::reslimit::LimitType;
 use crate::{
     os::{
         mem::{MemoryOperation, MemoryPermission, QueryResult},
-        Handle, WeakHandle,
+        OwnedHandle, WeakHandle,
     },
     result::Result,
     sync::{ArbitrationType, ResetType},
@@ -125,8 +125,8 @@ pub unsafe fn create_thread(
     argument: usize,
     stacktop: *mut u8,
     processor_id: i32,
-) -> Result<Handle> {
-    svc!(0x08: (priority, entry_point, argument, stacktop, processor_id) -> Handle)
+) -> Result<OwnedHandle> {
+    svc!(0x08: (priority, entry_point, argument, stacktop, processor_id) -> OwnedHandle)
 }
 
 pub fn exit_thread() -> ! {
@@ -146,18 +146,18 @@ pub fn get_thread_priority(handle: WeakHandle) -> Result<i32> {
     unsafe { svc!(0x0b: (_, handle) -> i32) }
 }
 
-pub fn create_mutex(initially_locked: bool) -> Result<Handle> {
-    unsafe { svc!(0x13: (initially_locked) -> Handle) }
+pub fn create_mutex(initially_locked: bool) -> Result<OwnedHandle> {
+    unsafe { svc!(0x13: (initially_locked) -> OwnedHandle) }
 }
 
 pub fn release_mutex(handle: WeakHandle) -> Result<()> {
     unsafe { svc!(0x14: (handle)) }
 }
 
-pub fn create_event(reset_type: ResetType) -> Result<Handle> {
+pub fn create_event(reset_type: ResetType) -> Result<OwnedHandle> {
     let reset_type = reset_type as u32;
 
-    unsafe { svc!(0x17: (reset_type) -> Handle) }
+    unsafe { svc!(0x17: (reset_type) -> OwnedHandle) }
 }
 
 pub fn signal_event(handle: WeakHandle) -> Result<()> {
@@ -173,8 +173,8 @@ pub unsafe fn create_memory_block(
     size: usize,
     my_permissions: MemoryPermission,
     other_permissions: MemoryPermission,
-) -> Result<Handle> {
-    svc!(0x1e: (other_permissions, address, size, my_permissions) -> Handle)
+) -> Result<OwnedHandle> {
+    svc!(0x1e: (other_permissions, address, size, my_permissions) -> OwnedHandle)
 }
 
 pub unsafe fn map_memory_block(
@@ -190,8 +190,8 @@ pub unsafe fn unmap_memory_block(handle: WeakHandle, addr: usize) -> Result<()> 
     svc!(0x20: (handle, addr))
 }
 
-pub fn create_address_arbiter() -> Result<Handle> {
-    unsafe { svc!(0x21: () -> Handle) }
+pub fn create_address_arbiter() -> Result<OwnedHandle> {
+    unsafe { svc!(0x21: () -> OwnedHandle) }
 }
 
 pub fn arbitrate_address(
@@ -252,8 +252,8 @@ pub fn wait_synchronization_any(handles: &[WeakHandle], timeout: Timeout) -> Res
     }
 }
 
-pub fn duplicate_handle(handle: WeakHandle) -> Result<Handle> {
-    unsafe { svc!(0x27: (_, handle) -> Handle) }
+pub fn duplicate_handle(handle: WeakHandle) -> Result<OwnedHandle> {
+    unsafe { svc!(0x27: (_, handle) -> OwnedHandle) }
 }
 
 pub fn get_system_tick_count() -> u64 {
@@ -271,10 +271,10 @@ pub unsafe fn get_system_info(sysinfo_type: u32, param: i32) -> Result<i64> {
     Ok(((out_high as i64) << 32) | out_low as i64)
 }
 
-pub fn connect_to_port(port_name: &str) -> Result<Handle> {
+pub fn connect_to_port(port_name: &str) -> Result<OwnedHandle> {
     let port_name = port_name.as_ptr();
 
-    unsafe { svc!(0x2d: (_, port_name) -> Handle) }
+    unsafe { svc!(0x2d: (_, port_name) -> OwnedHandle) }
 }
 
 #[inline]
@@ -287,7 +287,7 @@ pub fn get_process_id(process_handle: WeakHandle) -> Result<u32> {
     unsafe { svc!(0x35: (_, process_handle) -> u32) }
 }
 
-pub fn get_resource_limit(process_handle: WeakHandle) -> Result<Handle> {
+pub fn get_resource_limit(process_handle: WeakHandle) -> Result<OwnedHandle> {
     let mut out_handle: u32 = 0;
     let out_handle_ptr = &mut out_handle as *mut u32;
     unsafe {
@@ -296,7 +296,7 @@ pub fn get_resource_limit(process_handle: WeakHandle) -> Result<Handle> {
             (
                 out_handle_ptr, // TODO: is it really necessary to pass this in?
                 process_handle,
-            ) -> Handle
+            ) -> OwnedHandle
         )
     }
 }

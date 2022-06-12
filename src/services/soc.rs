@@ -6,7 +6,7 @@ use crate::ports::srv::Srv;
 use crate::{
     heap::PageAlignedBuffer,
     ipc::{IpcParameter, IpcRequest, IpcResult, ThisProcessId},
-    os::{mem::MemoryPermission, BorrowHandle, Handle},
+    os::{mem::MemoryPermission, BorrowHandle, OwnedHandle},
     result::{ErrorCode as SystemErrorCode, Result as SystemResult},
     svc, tls,
 };
@@ -18,9 +18,9 @@ use log::debug;
 
 #[derive(Debug)]
 pub struct Soc {
-    handle: Handle,
+    handle: OwnedHandle,
     buffer: PageAlignedBuffer,
-    buffer_handle: Handle,
+    buffer_handle: OwnedHandle,
 }
 
 impl Soc {

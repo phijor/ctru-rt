@@ -6,7 +6,7 @@ use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use super::{
     mem::{MemoryPermission, MemoryState, QueryResult},
-    Handle,
+    OwnedHandle,
 };
 use crate::result::{Result, ERROR_OUT_OF_MEMORY};
 use crate::svc;
@@ -18,7 +18,7 @@ use log::debug;
 pub struct MappedBlock {
     start: usize,
     size: usize,
-    handle: Handle,
+    handle: OwnedHandle,
 }
 
 impl MappedBlock {
@@ -77,7 +77,7 @@ impl SharedMemoryMapper {
 
     pub fn map(
         &self,
-        memory_handle: Handle,
+        memory_handle: OwnedHandle,
         size: usize,
         my_permissions: MemoryPermission,
         other_permissions: MemoryPermission,
@@ -114,7 +114,7 @@ impl SharedMemoryMapper {
         })
     }
 
-    pub fn unmap(&self, block: MappedBlock) -> Result<Handle> {
+    pub fn unmap(&self, block: MappedBlock) -> Result<OwnedHandle> {
         unsafe { svc::unmap_memory_block(block.handle.handle(), block.start as usize)? }
 
         self.next_candidate.store(block.start, Ordering::Release);

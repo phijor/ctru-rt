@@ -4,7 +4,7 @@
 
 use crate::{
     ipc::{IpcRequest, ThisProcessId},
-    os::{BorrowHandle, Handle},
+    os::{BorrowHandle, OwnedHandle},
     result::Result,
     svc,
 };
@@ -21,7 +21,7 @@ pub enum BlockingPolicy {
 
 #[derive(Debug)]
 pub struct Srv {
-    handle: Handle,
+    handle: OwnedHandle,
     blocking_policy: BlockingPolicy,
 }
 
@@ -55,12 +55,12 @@ impl Srv {
             .map(drop)
     }
 
-    pub fn enable_notifications(&self) -> Result<Handle> {
+    pub fn enable_notifications(&self) -> Result<OwnedHandle> {
         let reply = IpcRequest::command(0x2).dispatch(self.handle.handle())?;
         Ok(unsafe { reply.finish_results().read_handle() })
     }
 
-    pub fn register_service(&self, service_name: &str, max_sessions: u32) -> Result<Handle> {
+    pub fn register_service(&self, service_name: &str, max_sessions: u32) -> Result<OwnedHandle> {
         let ((name0, name1), len) = unsafe { write_str_param(service_name) };
         let mut reply = IpcRequest::command(0x3)
             .parameters(&[name0, name1, len, max_sessions])
@@ -79,7 +79,7 @@ impl Srv {
         Ok(())
     }
 
-    pub fn get_service_handle(&self, service_name: &str) -> Result<Handle> {
+    pub fn get_service_handle(&self, service_name: &str) -> Result<OwnedHandle> {
         let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
 
         let mut reply = IpcRequest::command(0x5)

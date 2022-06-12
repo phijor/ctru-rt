@@ -6,7 +6,7 @@ use crate::ipc::{IpcRequest, StaticBuffer};
 use crate::os::mem::MemoryPermission;
 use crate::os::{
     sharedmem::{MappedBlock, SharedMemoryMapper},
-    BorrowHandle, Handle, WeakHandle,
+    BorrowHandle, OwnedHandle, WeakHandle,
 };
 use crate::ports::srv::Srv;
 use crate::result::{ErrorCode, Result};
@@ -407,7 +407,7 @@ impl Gpu {
     }
 
     fn aquire_access(
-        service_handle: Handle,
+        service_handle: OwnedHandle,
         owner_process: WeakHandle,
         flags: u8,
     ) -> Result<AccessRightsToken> {
@@ -456,7 +456,7 @@ impl Gpu {
         })
     }
 
-    fn map_shared_memory(shared_memory_handle: Handle) -> Result<MappedBlock> {
+    fn map_shared_memory(shared_memory_handle: OwnedHandle) -> Result<MappedBlock> {
         SharedMemoryMapper::global().map(
             shared_memory_handle,
             0x1000,
@@ -611,7 +611,7 @@ impl Gpu {
 #[derive(Debug)]
 #[must_use = "GPU access rights must be released properly"]
 struct AccessRightsToken {
-    service_handle: Handle,
+    service_handle: OwnedHandle,
 }
 
 impl AccessRightsToken {
@@ -619,7 +619,7 @@ impl AccessRightsToken {
         self.service_handle.handle()
     }
 
-    fn release(&mut self) -> Result<Handle> {
+    fn release(&mut self) -> Result<OwnedHandle> {
         debug!("Releasing GPU access rights");
         let _ = IpcRequest::command(0x17).dispatch(self.service_handle.borrow_handle())?;
         Ok(self.service_handle.take())

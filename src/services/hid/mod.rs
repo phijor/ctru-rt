@@ -7,7 +7,7 @@ use crate::{
     os::{
         mem::MemoryPermission,
         sharedmem::{MappedBlock, SharedMemoryMapper},
-        Handle, SystemTick,
+        OwnedHandle, SystemTick,
     },
     ports::srv::Srv,
     result::Result,
@@ -24,7 +24,7 @@ struct SharedMemory {
 }
 
 impl SharedMemory {
-    fn new(memory_handle: Handle) -> Result<Self> {
+    fn new(memory_handle: OwnedHandle) -> Result<Self> {
         const SIZE: usize = 0x2b0;
         const SELF_PERM: MemoryPermission = MemoryPermission::R;
         const HID_PERM: MemoryPermission = MemoryPermission::DontCare;
@@ -89,12 +89,12 @@ impl Drop for SharedMemory {
 
 #[derive(Debug)]
 pub struct Hid {
-    service_handle: Handle,
+    service_handle: OwnedHandle,
     sharedmem: SharedMemory,
-    pads: (Handle, Handle),
-    accelerometer: Handle,
-    gyroscope: Handle,
-    debugpad: Handle,
+    pads: (OwnedHandle, OwnedHandle),
+    accelerometer: OwnedHandle,
+    gyroscope: OwnedHandle,
+    debugpad: OwnedHandle,
 }
 
 impl Hid {
@@ -107,7 +107,7 @@ impl Hid {
         debug!("Acquiring IPC handles for HID module...");
         let reply = IpcRequest::command(0xa).dispatch(service_handle.handle())?;
 
-        let [memory_handle, pad0, pad1, accelerometer, gyroscope, debugpad]: [Handle; 6] =
+        let [memory_handle, pad0, pad1, accelerometer, gyroscope, debugpad]: [OwnedHandle; 6] =
             unsafe { reply.finish_results().read_translate_result() };
 
         debug!("Mapping HID shared memory...");

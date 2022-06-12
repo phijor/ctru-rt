@@ -10,7 +10,7 @@ use self::reply::CommandBufferReader;
 use self::request::CommandBufferWriter;
 pub(crate) use self::request::IpcRequest;
 
-use crate::os::{Handle, WeakHandle};
+use crate::os::{OwnedHandle, WeakHandle};
 use crate::result::{ResultCode, ResultValue};
 use crate::tls;
 
@@ -176,15 +176,15 @@ const TYPE_STATIC_BUFFER: u32 = 1 << 1;
 const FLAG_MOVE_HANDLE: u32 = 1 << 4;
 const FLAG_REPLACE_PID: u32 = 1 << 5;
 
-impl TranslateParameter for Handle {
+impl TranslateParameter for OwnedHandle {
     #[inline(always)]
     fn encode(self, cmdbuf: &mut CommandBufferWriter) {
-        let handle: [Handle; 1] = unsafe { core::mem::transmute(self) };
+        let handle: [OwnedHandle; 1] = unsafe { core::mem::transmute(self) };
         handle.encode(cmdbuf)
     }
 }
 
-impl<const N: usize> TranslateParameter for [Handle; N] {
+impl<const N: usize> TranslateParameter for [OwnedHandle; N] {
     #[inline]
     fn encode(self, cmdbuf: &mut CommandBufferWriter) {
         if N == 0 {
@@ -200,11 +200,11 @@ impl<const N: usize> TranslateParameter for [Handle; N] {
     }
 }
 
-impl<const N: usize> TranslateResult for [Handle; N] {
+impl<const N: usize> TranslateResult for [OwnedHandle; N] {
     #[inline]
     unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self {
         if N == 0 {
-            const CLOSED: Handle = Handle::new_closed();
+            const CLOSED: OwnedHandle = OwnedHandle::new_closed();
             return [CLOSED; N];
         }
 
@@ -216,14 +216,14 @@ impl<const N: usize> TranslateResult for [Handle; N] {
 
         for i in 0..N {
             let handles = &mut *handles.as_mut_ptr();
-            handles[i] = Handle::new(cmdbuf.read());
+            handles[i] = OwnedHandle::new(cmdbuf.read());
         }
 
         handles.assume_init()
     }
 }
 
-impl TranslateResult for Handle {
+impl TranslateResult for OwnedHandle {
     #[inline(always)]
     unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self {
         let header = cmdbuf.read();

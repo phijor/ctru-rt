@@ -5,13 +5,13 @@
 use crate::ports::srv::Srv;
 use crate::{
     ipc::IpcRequest,
-    os::Handle,
+    os::OwnedHandle,
     result::{CommonDescription, ErrorCode, Level, Module, Result, Summary},
 };
 
 #[derive(Debug)]
 pub struct Ac {
-    handle: Handle,
+    handle: OwnedHandle,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
