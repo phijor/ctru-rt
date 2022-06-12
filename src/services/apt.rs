@@ -76,8 +76,12 @@ impl<'access, 'srv> Apt<'access, 'srv> {
             .dispatch(&self.handle)?;
 
         let mut reply = reply.finish_results();
-        let signal_event = unsafe { Event::from_handle(reply.read_handle()) };
-        let resume_event = unsafe { Event::from_handle(reply.read_handle()) };
+        let [signal_handle, resume_handle]: [OwnedHandle; 2] = unsafe {
+            reply.read_translate_result()
+        };
+
+        let signal_event = unsafe { Event::from_handle(signal_handle) };
+        let resume_event = unsafe { Event::from_handle(resume_handle) };
 
         Ok((signal_event, resume_event))
     }
