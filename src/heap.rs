@@ -25,6 +25,8 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 #[global_allocator]
 pub(crate) static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
+pub(crate) static LINEAR_ALLOCATOR: LockedHeap = LockedHeap::empty();
+
 const HEAP_START: usize = 0x0800_0000;
 const HEAP_SPLIT_CAP: usize = 24 << 20; // 24 MiB
 const LINEAR_HEAP_SPLIT_CAP: usize = 32 << 20; // 32 MiB
@@ -140,6 +142,10 @@ pub(crate) fn init() -> Result<()> {
                 mem::MemoryPermission::Rw,
             )?
         };
+
+        unsafe {
+            LINEAR_ALLOCATOR.lock().init(linear_heap_start, linear_heap_size);
+        }
 
         early_debug!(
             "Initialized linear heap at {:p}, size = 0x{:08x}",

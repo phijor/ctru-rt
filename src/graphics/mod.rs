@@ -4,6 +4,7 @@
 
 use core::ptr::NonNull;
 
+use crate::heap::LINEAR_ALLOCATOR;
 use crate::result::{ErrorCode, Result};
 use crate::services::gsp::gpu::{FramebufferIndex, Gpu, InterruptEvent, Screen, ScreenDimensions};
 
@@ -55,7 +56,9 @@ impl Framebuffer {
             * usize::from(dimensions.height)
             * format.bytes_per_pixel();
         debug!("Allocating new framebuffer (size = {:#0x})", size);
-        let buffer = vram::ALLOCATOR.allocate(Self::layout_for_size(size))?;
+        let buffer = LINEAR_ALLOCATOR
+            .lock()
+            .allocate_first_fit(Self::layout_for_size(size))?;
 
         debug!("New framebuffer: {:p}", buffer);
 
@@ -79,7 +82,11 @@ impl Framebuffer {
 impl Drop for Framebuffer {
     fn drop(&mut self) {
         if let Some(buffer) = self.buffer.take() {
-            unsafe { vram::ALLOCATOR.deallocate(buffer, Self::layout_for_size(self.size)) }
+            unsafe {
+                LINEAR_ALLOCATOR
+                    .lock()
+                    .deallocate(buffer, Self::layout_for_size(self.size))
+            }
         }
     }
 }
@@ -120,6 +127,7 @@ impl ScreenConfiguration {
         format = self.color_format.to_value() as u32;
 
         if let Screen::Top = screen {
+            format |= 1 << 4; // Scan-line doubling
             format |= 1 << 6; // 2D mode
         }
 

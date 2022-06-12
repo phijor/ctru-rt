@@ -13,7 +13,7 @@ use ctru_rt::{
     ports::srv::Srv,
     result::Result,
     services::{gsp::gpu::Gpu, hid::Hid},
-    svc,
+    svc::{self, Timeout},
 };
 use log::{error, info};
 
@@ -50,6 +50,8 @@ fn run() -> Result<()> {
     }
 
     info!("Exiting...");
+
+    svc::sleep_thread(Timeout::forever());
 
     Ok(())
 }
