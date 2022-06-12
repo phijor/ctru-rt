@@ -10,7 +10,7 @@ use self::reply::CommandBufferReader;
 use self::request::CommandBufferWriter;
 pub(crate) use self::request::IpcRequest;
 
-use crate::os::{OwnedHandle, BorrowedHandle};
+use crate::os::{BorrowedHandle, OwnedHandle, RawHandle};
 use crate::result::{ResultCode, ResultValue};
 use crate::tls;
 
@@ -204,23 +204,26 @@ impl<const N: usize> TranslateResult for [OwnedHandle; N] {
     #[inline]
     unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self {
         if N == 0 {
-            const CLOSED: OwnedHandle = OwnedHandle::new_closed();
-            return [CLOSED; N];
+            const EMPTY: [OwnedHandle; 0] = [];
+            let handles = &EMPTY as *const [_; 0] as *const [_; N];
+            return handles.read();
         }
 
         let header = cmdbuf.read();
         let num_handles = (header >> 26) + 1;
         debug_assert_eq!(num_handles, N as u32);
 
-        let mut handles = MaybeUninit::<Self>::uninit();
+        let mut handles: [MaybeUninit<OwnedHandle>; N] = MaybeUninit::uninit().assume_init();
 
-        for i in 0..N {
-            let handles = &mut *handles.as_mut_ptr();
-            handles[i] =
-                OwnedHandle::new(cmdbuf.read()).expect("Command buffer contained invalid Handle");
+        for uninit_handle in &mut handles {
+            let raw_handle: RawHandle = cmdbuf.read();
+            let new_handle =
+                OwnedHandle::new(raw_handle).expect("Command buffer contained an invalid Handle");
+
+            uninit_handle.write(new_handle);
         }
 
-        handles.assume_init()
+        MaybeUninit::array_assume_init(handles)
     }
 }
 
