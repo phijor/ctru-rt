@@ -13,17 +13,19 @@ pub mod mem;
 pub mod reslimit;
 pub mod sharedmem;
 
+pub type RawHandle = u32;
+
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct BorrowedHandle<'handle> {
-    handle: u32,
+    handle: RawHandle,
     _owner: PhantomData<&'handle u32>,
 }
 
-pub(crate) const CLOSED_HANDLE: u32 = 0;
+pub(crate) const CLOSED_HANDLE: RawHandle = 0;
 
 impl BorrowedHandle<'_> {
-    pub(crate) const fn new(raw_handle: u32) -> Self {
+    pub(crate) const fn new(raw_handle: RawHandle) -> Self {
         Self {
             handle: raw_handle,
             _owner: PhantomData,
@@ -38,11 +40,11 @@ impl BorrowedHandle<'_> {
         Self::new(0xFFFF_8001)
     }
 
-    pub(crate) fn as_raw(&self) -> u32 {
+    pub(crate) fn as_raw(&self) -> RawHandle {
         self.handle
     }
 
-    pub(crate) fn into_raw(self) -> u32 {
+    pub(crate) fn into_raw(self) -> RawHandle {
         self.handle
     }
 
@@ -58,7 +60,7 @@ pub struct OwnedHandle {
 }
 
 impl OwnedHandle {
-    pub unsafe fn new(raw_handle: u32) -> Self {
+    pub unsafe fn new(raw_handle: RawHandle) -> Self {
         Self {
             handle: NonZeroU32::new(raw_handle),
             // _unsend_marker: PhantomData,
@@ -101,7 +103,7 @@ impl OwnedHandle {
         svc::duplicate_handle(self.handle())
     }
 
-    pub const fn leak(self) -> u32 {
+    pub const fn leak(self) -> RawHandle {
         let raw_handle = self.handle;
         core::mem::forget(self);
 
