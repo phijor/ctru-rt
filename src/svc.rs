@@ -6,7 +6,7 @@ use crate::os::reslimit::LimitType;
 use crate::{
     os::{
         mem::{MemoryOperation, MemoryPermission, QueryResult},
-        BorrowedHandle, OwnedHandle, RawHandle
+        BorrowedHandle, OwnedHandle, RawHandle,
     },
     result::Result,
     sync::{ArbitrationType, ResetType},
@@ -278,7 +278,10 @@ pub fn connect_to_port(port_name: &str) -> Result<OwnedHandle> {
 }
 
 #[inline]
-pub unsafe fn send_sync_request(handle: BorrowedHandle, command_buffer: *mut u32) -> Result<*mut u32> {
+pub unsafe fn send_sync_request(
+    handle: BorrowedHandle,
+    command_buffer: *mut u32,
+) -> Result<*mut u32> {
     svc!(0x32: (handle))?;
     Ok(command_buffer)
 }

@@ -109,9 +109,7 @@ impl Soc {
     }
 
     fn shutdown(&self) -> SystemResult<()> {
-        IpcRequest::command(0x19)
-            .dispatch(&self.handle)
-            .map(drop)
+        IpcRequest::command(0x19).dispatch(&self.handle).map(drop)
     }
 
     pub fn reclaim(mut self) -> SystemResult<PageAlignedBuffer> {

@@ -6,7 +6,7 @@ use crate::ipc::{IpcRequest, StaticBuffer};
 use crate::os::mem::MemoryPermission;
 use crate::os::{
     sharedmem::{MappedBlock, SharedMemoryMapper},
-    AsHandle, OwnedHandle, BorrowedHandle,
+    AsHandle, BorrowedHandle, OwnedHandle,
 };
 use crate::ports::srv::Srv;
 use crate::result::{ErrorCode, Result};
@@ -394,8 +394,11 @@ impl Gpu {
         let service_handle = srv.get_service_handle("gsp::Gpu")?;
 
         const ACCESS_FLAGS: u8 = 0x00;
-        let mut access =
-            Self::aquire_access(service_handle, BorrowedHandle::active_process(), ACCESS_FLAGS)?;
+        let mut access = Self::aquire_access(
+            service_handle,
+            BorrowedHandle::active_process(),
+            ACCESS_FLAGS,
+        )?;
 
         const QUEUE_FLAGS: u8 = 0x01;
         let gsp_relay_queue = Self::register_interrupt_relay_queue(&mut access, QUEUE_FLAGS)?;

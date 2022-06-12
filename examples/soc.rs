@@ -15,8 +15,8 @@ use ctru_rt::{
     heap::{PageAlignError, PageAlignedBuffer},
     ports::srv::Srv,
     result::{ErrorCode, Level, Module, Result, Summary},
-    svc::{sleep_thread, UserBreakReason},
     services::soc::{Domain, Protocol, Soc, Type},
+    svc::{sleep_thread, UserBreakReason},
 };
 
 #[panic_handler]

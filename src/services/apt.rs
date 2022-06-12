@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 
 use crate::ipc::{IpcParameter, IpcRequest};
-use crate::os::{AsHandle, OwnedHandle, BorrowedHandle};
+use crate::os::{AsHandle, BorrowedHandle, OwnedHandle};
 use crate::ports::srv::Srv;
 use crate::result::Result;
 use crate::sync::{Event, Mutex, OsMutex};
@@ -103,7 +103,9 @@ pub struct AptAccess<'srv> {
 
 impl<'srv> AptAccess<'srv> {
     fn aquire<'access>(&'access mut self) -> Result<Apt<'access, 'srv>> {
-        let (handle, matched_offset) = self.srv.get_service_handle_alternatives(&APT_SERVICE_NAMES[self.service_name_index..])?;
+        let (handle, matched_offset) = self
+            .srv
+            .get_service_handle_alternatives(&APT_SERVICE_NAMES[self.service_name_index..])?;
         self.service_name_index += matched_offset;
 
         Ok(Apt::new(handle, self))

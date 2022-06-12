@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::os::{BorrowedHandle, AsHandle};
+use crate::os::{AsHandle, BorrowedHandle};
 use crate::result::{Result, ResultCode};
 use crate::svc;
 
@@ -151,7 +151,10 @@ impl<S: state::State> IpcRequest<S> {
     }
 
     #[inline]
-    pub fn dispatch_no_fail<Handle: AsHandle>(self, receiver: Handle) -> Result<(ResultCode, IpcReply)> {
+    pub fn dispatch_no_fail<Handle: AsHandle>(
+        self,
+        receiver: Handle,
+    ) -> Result<(ResultCode, IpcReply)> {
         self.dispatch_impl(receiver.as_handle())
     }
 

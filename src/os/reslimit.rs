@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 
 use crate::{result::Result, svc};
 
-use super::{AsHandle, OwnedHandle, BorrowedHandle};
+use super::{AsHandle, BorrowedHandle, OwnedHandle};
 
 // /// Types of resource limit
 // typedef enum {

@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::ipc::IpcRequest;
-use crate::os::{OwnedHandle, BorrowedHandle};
+use crate::os::{BorrowedHandle, OwnedHandle};
 use crate::result::{Result, ResultCode};
 use crate::svc;
 
