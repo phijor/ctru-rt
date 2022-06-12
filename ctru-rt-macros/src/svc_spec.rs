@@ -18,9 +18,15 @@ use syn::{Attribute, Error};
 
 use itertools::MultiUnzip;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 #[cfg_attr(test, derive(Debug))]
 pub struct Register(usize);
+
+impl Register {
+    fn emit_name(&self, span: Span) -> LitStr {
+        LitStr::new(&format!("r{}", self.0), span)
+    }
+}
 
 impl FromStr for Register {
     type Err = &'static str;
@@ -175,7 +181,7 @@ impl InputSpec {
                 InputParameterSpec::Named { name, register } => {
                     let register = if let Some(register) = register {
                         if let Some(prev) =
-                            parameters.iter().find(|prev| prev.register == register.0)
+                            parameters.iter().find(|prev| prev.register == *register)
                         {
                             panic!(
                                 r#"Register r{reg} is already occupied by "{name}""#,
@@ -184,11 +190,11 @@ impl InputSpec {
                             )
                         }
 
-                        register.0
+                        *register
                     } else {
-                        auto_register
+                        Register(auto_register)
                     };
-                    auto_register = register + 1;
+                    auto_register = register.0 + 1;
 
                     InputParameter::new(name.clone(), register)
                 }
@@ -219,24 +225,20 @@ impl InputSpec {
     }
 }
 
-fn register_name(index: usize, span: Span) -> LitStr {
-    LitStr::new(&format!("r{}", index), span)
-}
-
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct InputParameter {
     name: Ident,
-    register: usize,
+    register: Register,
 }
 
 impl InputParameter {
-    fn new(name: Ident, register: usize) -> Self {
+    fn new(name: Ident, register: Register) -> Self {
         Self { name, register }
     }
 
     fn emit_register_spec(&self) -> TokenStream {
         let name = &self.name;
-        let reg = register_name(self.register, name.span());
+        let reg = self.register.emit_name(name.span());
 
         quote! {
             in(#reg) IntoRegister::into_register(#name)
@@ -248,12 +250,12 @@ impl InputParameter {
 struct OutputParameter {
     ident: Ident,
     ty: Type,
-    register: usize,
+    register: Register,
 }
 
 impl OutputParameter {
-    fn new(register: usize, ty: Type) -> Self {
-        let ident = format_ident!("__out_r{}", register);
+    fn new(register: Register, ty: Type) -> Self {
+        let ident = format_ident!("__out_r{}", register.0);
         Self {
             ident,
             ty,
@@ -262,7 +264,7 @@ impl OutputParameter {
     }
 
     fn result() -> Self {
-        Self::new(0, syn::parse_quote!(u32))
+        Self::new(Register(0), syn::parse_quote!(u32))
     }
 
     fn declaration(&self) -> TokenStream {
@@ -274,7 +276,7 @@ impl OutputParameter {
 
     fn register_spec(&self) -> TokenStream {
         let name = &self.ident;
-        let reg = register_name(self.register, name.span());
+        let reg = self.register.emit_name(name.span());
 
         quote! {
             lateout(#reg) #name
@@ -307,14 +309,14 @@ impl OutputSpec {
             Self::NoReturn(_) => return None,
             Self::Unit => vec![],
             Self::Single(ty) => {
-                vec![OutputParameter::new(1, (**ty).clone())]
+                vec![OutputParameter::new(Register(1), (**ty).clone())]
             }
             Self::Multiple(types) => types
                 .elems
                 .iter()
                 .cloned()
                 .zip(1usize..)
-                .map(|(ty, register_index)| OutputParameter::new(register_index, ty))
+                .map(|(ty, register_index)| OutputParameter::new(Register(register_index), ty))
                 .collect(),
         };
 
@@ -494,8 +496,8 @@ mod tests {
             .try_into()
             .expect("Expected to parse 3 parameters");
 
-        assert_matches!(&params[0], InputParameter { name, register: 1 } if name == "foo");
-        assert_matches!(&params[1], InputParameter { name, register: 0 } if name == "bar");
+        assert_matches!(&params[0], InputParameter { name, register: Register(1) } if name == "foo");
+        assert_matches!(&params[1], InputParameter { name, register: Register(0) } if name == "bar");
     }
 
     #[test]
@@ -573,9 +575,9 @@ mod tests {
             .expect("Expected two parameters, skipping one of three in the spec");
 
         assert_eq!(foo.name, "foo");
-        assert_eq!(foo.register, 0);
+        assert_eq!(foo.register, Register(0));
         // ... skipping r1 ...
         assert_eq!(bar.name, "bar");
-        assert_eq!(bar.register, 2);
+        assert_eq!(bar.register, Register(2));
     }
 }
