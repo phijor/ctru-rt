@@ -195,7 +195,7 @@ macro_rules! result_value_dbg_fmt {
 result_value_dbg_fmt!(ResultCode);
 result_value_dbg_fmt!(ErrorCode);
 
-#[derive(Debug, Copy, Clone, PartialEq, EnumCast)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumCast)]
 #[enum_cast(value_type = "u32")]
 pub enum Level {
     Success,
@@ -209,7 +209,7 @@ pub enum Level {
     Fatal,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, EnumCast)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumCast)]
 #[enum_cast(value_type = "u32")]
 pub enum Summary {
     Success,
@@ -227,7 +227,7 @@ pub enum Summary {
     InvalidResultValue = 63,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, EnumCast)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumCast)]
 #[enum_cast(value_type = "u8")]
 pub enum Module {
     Common,
