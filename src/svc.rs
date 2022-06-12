@@ -6,7 +6,7 @@ use crate::os::reslimit::LimitType;
 use crate::{
     os::{
         mem::{MemoryOperation, MemoryPermission, QueryResult},
-        OwnedHandle, WeakHandle,
+        OwnedHandle, BorrowedHandle,
     },
     result::Result,
     sync::{ArbitrationType, ResetType},
@@ -142,7 +142,7 @@ pub fn sleep_thread(duration: Timeout) {
     }
 }
 
-pub fn get_thread_priority(handle: WeakHandle) -> Result<i32> {
+pub fn get_thread_priority(handle: BorrowedHandle) -> Result<i32> {
     unsafe { svc!(0x0b: (_, handle) -> i32) }
 }
 
@@ -150,7 +150,7 @@ pub fn create_mutex(initially_locked: bool) -> Result<OwnedHandle> {
     unsafe { svc!(0x13: (initially_locked) -> OwnedHandle) }
 }
 
-pub fn release_mutex(handle: WeakHandle) -> Result<()> {
+pub fn release_mutex(handle: BorrowedHandle) -> Result<()> {
     unsafe { svc!(0x14: (handle)) }
 }
 
@@ -160,11 +160,11 @@ pub fn create_event(reset_type: ResetType) -> Result<OwnedHandle> {
     unsafe { svc!(0x17: (reset_type) -> OwnedHandle) }
 }
 
-pub fn signal_event(handle: WeakHandle) -> Result<()> {
+pub fn signal_event(handle: BorrowedHandle) -> Result<()> {
     unsafe { svc!(0x18: (handle)) }
 }
 
-pub fn clear_event(handle: WeakHandle) -> Result<()> {
+pub fn clear_event(handle: BorrowedHandle) -> Result<()> {
     unsafe { svc!(0x19: (handle)) }
 }
 
@@ -178,7 +178,7 @@ pub unsafe fn create_memory_block(
 }
 
 pub unsafe fn map_memory_block(
-    handle: WeakHandle,
+    handle: BorrowedHandle,
     address: usize,
     my_permissions: MemoryPermission,
     other_permissions: MemoryPermission,
@@ -186,7 +186,7 @@ pub unsafe fn map_memory_block(
     svc!(0x1f: (handle, address, my_permissions, other_permissions))
 }
 
-pub unsafe fn unmap_memory_block(handle: WeakHandle, addr: usize) -> Result<()> {
+pub unsafe fn unmap_memory_block(handle: BorrowedHandle, addr: usize) -> Result<()> {
     svc!(0x20: (handle, addr))
 }
 
@@ -195,7 +195,7 @@ pub fn create_address_arbiter() -> Result<OwnedHandle> {
 }
 
 pub fn arbitrate_address(
-    handle: WeakHandle,
+    handle: BorrowedHandle,
     address: usize,
     arbitration_type: ArbitrationType,
     value: i32,
@@ -205,24 +205,24 @@ pub fn arbitrate_address(
     unsafe { svc!(0x22: (handle, address, arbitration_type, value, ns_low, ns_high)) }
 }
 
-pub fn close_handle(handle: WeakHandle) -> Result<()> {
+pub fn close_handle(handle: BorrowedHandle) -> Result<()> {
     unsafe { svc!(0x23: (handle)) }
 }
 
-pub fn wait_synchronization(handle: WeakHandle, timeout: Timeout) -> Result<()> {
+pub fn wait_synchronization(handle: BorrowedHandle, timeout: Timeout) -> Result<()> {
     let (ns_high, ns_low) = (timeout.reg_high(), timeout.reg_low());
 
     unsafe { svc!(0x24: (handle, _, ns_high, ns_low)) }
 }
 
 pub fn wait_synchronization_many(
-    handles: &[WeakHandle],
+    handles: &[BorrowedHandle],
     wait_all: bool,
     timeout: Timeout,
 ) -> Result<i32> {
     let (ns_high, ns_low) = (timeout.reg_high(), timeout.reg_low());
     let num_handles = handles.len();
-    let handles: *const WeakHandle = handles.as_ptr();
+    let handles: *const BorrowedHandle = handles.as_ptr();
 
     let signaled = unsafe { svc!(0x25: (ns_low, handles, num_handles, wait_all, ns_high) -> i32) }?;
 
@@ -232,13 +232,13 @@ pub fn wait_synchronization_many(
 const WAIT_FIRST: bool = false;
 const WAIT_ALL: bool = true;
 
-pub fn wait_synchronization_all(handles: &[WeakHandle], timeout: Timeout) -> Result<()> {
+pub fn wait_synchronization_all(handles: &[BorrowedHandle], timeout: Timeout) -> Result<()> {
     let _ = wait_synchronization_many(handles, WAIT_ALL, timeout)?;
 
     Ok(())
 }
 
-pub fn wait_synchronization_any(handles: &[WeakHandle], timeout: Timeout) -> Result<usize> {
+pub fn wait_synchronization_any(handles: &[BorrowedHandle], timeout: Timeout) -> Result<usize> {
     let signaled = wait_synchronization_many(handles, WAIT_ALL, timeout)?;
 
     match usize::try_from(signaled) {
@@ -252,7 +252,7 @@ pub fn wait_synchronization_any(handles: &[WeakHandle], timeout: Timeout) -> Res
     }
 }
 
-pub fn duplicate_handle(handle: WeakHandle) -> Result<OwnedHandle> {
+pub fn duplicate_handle(handle: BorrowedHandle) -> Result<OwnedHandle> {
     unsafe { svc!(0x27: (_, handle) -> OwnedHandle) }
 }
 
@@ -278,16 +278,16 @@ pub fn connect_to_port(port_name: &str) -> Result<OwnedHandle> {
 }
 
 #[inline]
-pub unsafe fn send_sync_request(handle: WeakHandle, command_buffer: *mut u32) -> Result<*mut u32> {
+pub unsafe fn send_sync_request(handle: BorrowedHandle, command_buffer: *mut u32) -> Result<*mut u32> {
     svc!(0x32: (handle))?;
     Ok(command_buffer)
 }
 
-pub fn get_process_id(process_handle: WeakHandle) -> Result<u32> {
+pub fn get_process_id(process_handle: BorrowedHandle) -> Result<u32> {
     unsafe { svc!(0x35: (_, process_handle) -> u32) }
 }
 
-pub fn get_resource_limit(process_handle: WeakHandle) -> Result<OwnedHandle> {
+pub fn get_resource_limit(process_handle: BorrowedHandle) -> Result<OwnedHandle> {
     let mut out_handle: u32 = 0;
     let out_handle_ptr = &mut out_handle as *mut u32;
     unsafe {
@@ -302,7 +302,7 @@ pub fn get_resource_limit(process_handle: WeakHandle) -> Result<OwnedHandle> {
 }
 
 pub fn get_resource_limit_values<const N: usize>(
-    limits_handle: WeakHandle,
+    limits_handle: BorrowedHandle,
     values: &mut [i64; N],
     limit_types: &[LimitType; N],
 ) -> Result<()> {
@@ -313,7 +313,7 @@ pub fn get_resource_limit_values<const N: usize>(
 }
 
 pub fn get_resource_limit_current_values<const N: usize>(
-    limits_handle: WeakHandle,
+    limits_handle: BorrowedHandle,
     values: &mut [i64; N],
     limit_types: &[LimitType; N],
 ) -> Result<()> {

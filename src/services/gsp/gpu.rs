@@ -6,7 +6,7 @@ use crate::ipc::{IpcRequest, StaticBuffer};
 use crate::os::mem::MemoryPermission;
 use crate::os::{
     sharedmem::{MappedBlock, SharedMemoryMapper},
-    BorrowHandle, OwnedHandle, WeakHandle,
+    BorrowHandle, OwnedHandle, BorrowedHandle,
 };
 use crate::ports::srv::Srv;
 use crate::result::{ErrorCode, Result};
@@ -395,7 +395,7 @@ impl Gpu {
 
         const ACCESS_FLAGS: u8 = 0x00;
         let mut access =
-            Self::aquire_access(service_handle, WeakHandle::active_process(), ACCESS_FLAGS)?;
+            Self::aquire_access(service_handle, BorrowedHandle::active_process(), ACCESS_FLAGS)?;
 
         const QUEUE_FLAGS: u8 = 0x01;
         let gsp_relay_queue = Self::register_interrupt_relay_queue(&mut access, QUEUE_FLAGS)?;
@@ -408,7 +408,7 @@ impl Gpu {
 
     fn aquire_access(
         service_handle: OwnedHandle,
-        owner_process: WeakHandle,
+        owner_process: BorrowedHandle,
         flags: u8,
     ) -> Result<AccessRightsToken> {
         let _reply = IpcRequest::command(0x16)
@@ -615,7 +615,7 @@ struct AccessRightsToken {
 }
 
 impl AccessRightsToken {
-    pub fn borrow_handle(&self) -> WeakHandle {
+    pub fn borrow_handle(&self) -> BorrowedHandle {
         self.service_handle.handle()
     }
 
@@ -633,7 +633,7 @@ impl Drop for AccessRightsToken {
 }
 
 fn write_graphics_register(
-    service_handle: WeakHandle,
+    service_handle: BorrowedHandle,
     register_offset: u32,
     value: &u32,
 ) -> Result<()> {
@@ -647,7 +647,7 @@ fn write_graphics_register(
 }
 
 fn write_graphics_register_masked(
-    service_handle: WeakHandle,
+    service_handle: BorrowedHandle,
     register_offset: u32,
     value: &u32,
     mask: &u32,

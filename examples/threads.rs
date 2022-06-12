@@ -13,7 +13,6 @@ use ctru_rt::svc::Timeout;
 use core::time::Duration;
 use core::{fmt::Write, panic::PanicInfo};
 
-use ctru_rt::os::WeakHandle;
 use ctru_rt::{
     debug::{init_log, SvcDebugLog},
     entry,

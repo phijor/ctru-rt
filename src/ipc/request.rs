@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::os::WeakHandle;
+use crate::os::BorrowedHandle;
 use crate::result::{Result, ResultCode};
 use crate::svc;
 
@@ -122,7 +122,7 @@ impl<S: state::State> IpcRequest<S> {
     }
 
     #[inline]
-    pub fn dispatch_no_fail(self, receiver: WeakHandle) -> Result<(ResultCode, IpcReply)> {
+    pub fn dispatch_no_fail(self, receiver: BorrowedHandle) -> Result<(ResultCode, IpcReply)> {
         let cmdbuf = self.cmdbuf.finish();
         let header = IpcHeader::new(
             self.id,
@@ -151,7 +151,7 @@ impl<S: state::State> IpcRequest<S> {
     }
 
     #[inline]
-    pub fn dispatch(self, receiver: WeakHandle) -> Result<IpcReply> {
+    pub fn dispatch(self, receiver: BorrowedHandle) -> Result<IpcReply> {
         let (result, reply) = self.dispatch_no_fail(receiver)?;
         result.into_result()?;
 

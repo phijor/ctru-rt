@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 
 use crate::ipc::{IpcParameter, IpcRequest};
-use crate::os::{BorrowHandle, OwnedHandle, WeakHandle};
+use crate::os::{BorrowHandle, OwnedHandle, BorrowedHandle};
 use crate::ports::srv::Srv;
 use crate::result::{Result, ERROR_NOT_AUTHORIZED};
 use crate::sync::{Event, Mutex, OsMutex};
@@ -91,7 +91,7 @@ impl<'access, 'srv> Apt<'access, 'srv> {
 }
 
 impl BorrowHandle for Apt<'_, '_> {
-    fn borrow_handle(&self) -> WeakHandle {
+    fn borrow_handle(&self) -> BorrowedHandle {
         self.handle.borrow_handle()
     }
 }

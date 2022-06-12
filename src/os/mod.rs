@@ -15,11 +15,11 @@ pub mod sharedmem;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
-pub struct WeakHandle<'a>(u32, PhantomData<&'a u32>);
+pub struct BorrowedHandle<'a>(u32, PhantomData<&'a u32>);
 
 pub(crate) const CLOSED_HANDLE: u32 = 0;
 
-impl WeakHandle<'_> {
+impl BorrowedHandle<'_> {
     pub(crate) const fn new(raw_handle: u32) -> Self {
         Self(raw_handle, PhantomData)
     }
@@ -84,10 +84,10 @@ impl OwnedHandle {
         }
     }
 
-    pub fn handle(&self) -> WeakHandle {
+    pub fn handle(&self) -> BorrowedHandle {
         match self.handle {
-            None => WeakHandle::invalid(),
-            Some(h) => WeakHandle::new(h.into()),
+            None => BorrowedHandle::invalid(),
+            Some(h) => BorrowedHandle::new(h.into()),
         }
     }
 
@@ -141,7 +141,7 @@ impl super::svc::IntoRegister for OwnedHandle {
     }
 }
 
-impl super::svc::IntoRegister for WeakHandle<'_> {
+impl super::svc::IntoRegister for BorrowedHandle<'_> {
     type Register = u32;
     unsafe fn into_register(self) -> u32 {
         self.into_raw()
@@ -179,11 +179,11 @@ impl MemoryRegion {
 }
 
 pub trait BorrowHandle {
-    fn borrow_handle(&self) -> WeakHandle;
+    fn borrow_handle(&self) -> BorrowedHandle;
 }
 
 impl BorrowHandle for OwnedHandle {
-    fn borrow_handle(&self) -> WeakHandle {
+    fn borrow_handle(&self) -> BorrowedHandle {
         self.handle()
     }
 }

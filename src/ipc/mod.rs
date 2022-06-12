@@ -10,7 +10,7 @@ use self::reply::CommandBufferReader;
 use self::request::CommandBufferWriter;
 pub(crate) use self::request::IpcRequest;
 
-use crate::os::{OwnedHandle, WeakHandle};
+use crate::os::{OwnedHandle, BorrowedHandle};
 use crate::result::{ResultCode, ResultValue};
 use crate::tls;
 
@@ -234,7 +234,7 @@ impl TranslateResult for OwnedHandle {
     }
 }
 
-impl<'h, const N: usize> TranslateParameter for [WeakHandle<'h>; N] {
+impl<'h, const N: usize> TranslateParameter for [BorrowedHandle<'h>; N] {
     #[inline(always)]
     fn encode(self, cmdbuf: &mut CommandBufferWriter) {
         if N == 0 {
@@ -250,7 +250,7 @@ impl<'h, const N: usize> TranslateParameter for [WeakHandle<'h>; N] {
     }
 }
 
-impl<'h> TranslateParameter for WeakHandle<'h> {
+impl<'h> TranslateParameter for BorrowedHandle<'h> {
     #[inline(always)]
     fn encode(self, cmdbuf: &mut CommandBufferWriter) {
         let header = TYPE_HANDLE;

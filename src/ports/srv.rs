@@ -182,7 +182,7 @@ unsafe fn write_str_param(s: &str) -> ((u32, u32), u32) {
 }
 
 impl BorrowHandle for Srv {
-    fn borrow_handle(&self) -> crate::os::WeakHandle {
+    fn borrow_handle(&self) -> crate::os::BorrowedHandle {
         self.handle.borrow_handle()
     }
 }

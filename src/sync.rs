@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::os::{BorrowHandle, OwnedHandle, SystemTick, WeakHandle, CLOSED_HANDLE};
+use crate::os::{BorrowHandle, OwnedHandle, SystemTick, BorrowedHandle, CLOSED_HANDLE};
 use crate::result::Result;
 use crate::svc::{self, Timeout};
 
@@ -53,13 +53,13 @@ impl Event {
         // There are the following #[repr(transparent)]-chains:
         // * Event -> Handle -> Option<NonZeroU32> (-> u32, niche optimization)
         // * WeakHandle -> u32
-        let handles: &[WeakHandle] = unsafe { core::mem::transmute(events) };
+        let handles: &[BorrowedHandle] = unsafe { core::mem::transmute(events) };
         svc::wait_synchronization_all(handles, timeout)
     }
 
     pub fn wait_any(events: &[Self], timeout: Timeout) -> Result<usize> {
         // SAFETY: See comment in Self::wait_all.
-        let handles: &[WeakHandle] = unsafe { core::mem::transmute(events) };
+        let handles: &[BorrowedHandle] = unsafe { core::mem::transmute(events) };
         svc::wait_synchronization_any(handles, timeout)
     }
 
@@ -70,7 +70,7 @@ impl Event {
 }
 
 impl BorrowHandle for Event {
-    fn borrow_handle(&self) -> WeakHandle {
+    fn borrow_handle(&self) -> BorrowedHandle {
         self.handle.borrow_handle()
     }
 }
@@ -88,7 +88,7 @@ impl AtomicHandle {
     }
 
     #[inline]
-    unsafe fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> WeakHandle {
+    unsafe fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> BorrowedHandle {
         let current = self.0.load(Ordering::Acquire);
 
         let raw_handle = if current == CLOSED_HANDLE {
@@ -101,7 +101,7 @@ impl AtomicHandle {
             ) {
                 Ok(new_handle) => new_handle,
                 Err(old_handle) => {
-                    let _ = svc::close_handle(WeakHandle::new(new_handle)).ok();
+                    let _ = svc::close_handle(BorrowedHandle::new(new_handle)).ok();
                     old_handle
                 }
             }
@@ -109,14 +109,14 @@ impl AtomicHandle {
             current
         };
 
-        WeakHandle::new(raw_handle)
+        BorrowedHandle::new(raw_handle)
     }
 }
 
 impl Drop for AtomicHandle {
     fn drop(&mut self) {
         let raw_handle = core::mem::replace(self.0.get_mut(), CLOSED_HANDLE);
-        let _ = svc::close_handle(WeakHandle::new(raw_handle));
+        let _ = svc::close_handle(BorrowedHandle::new(raw_handle));
     }
 }
 
@@ -141,9 +141,9 @@ pub type Mutex<T> = lock_api::Mutex<OsMutex, T>;
 pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, OsMutex, T>;
 
 impl BorrowHandle for AtomicHandle {
-    fn borrow_handle(&self) -> WeakHandle {
+    fn borrow_handle(&self) -> BorrowedHandle {
         let raw_handle = self.0.load(Ordering::SeqCst);
-        WeakHandle::new(raw_handle)
+        BorrowedHandle::new(raw_handle)
     }
 }
 
@@ -176,7 +176,7 @@ impl OsMutex {
         // self.handle.close()
     }
 
-    fn get(&self) -> WeakHandle {
+    fn get(&self) -> BorrowedHandle {
         unsafe {
             self.handle.get_or_init(move || {
                 const INITIALLY_LOCKED: bool = true;

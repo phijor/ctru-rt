@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::os::reslimit::process_limits;
-use crate::os::WeakHandle;
+use crate::os::BorrowedHandle;
 use crate::result::ERROR_OUT_OF_MEMORY;
 use crate::{early_debug, os::mem, result::Result, svc};
 
@@ -61,7 +61,7 @@ pub(crate) fn init() -> Result<()> {
     early_debug!("Initializing heap...",);
 
     let memory_remaining = {
-        let limits = process_limits(WeakHandle::active_process())?;
+        let limits = process_limits(BorrowedHandle::active_process())?;
         limits.memory_allocatable().remaining()?
     };
 
