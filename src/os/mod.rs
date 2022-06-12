@@ -15,13 +15,19 @@ pub mod sharedmem;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
-pub struct BorrowedHandle<'a>(u32, PhantomData<&'a u32>);
+pub struct BorrowedHandle<'handle> {
+    handle: u32,
+    _owner: PhantomData<&'handle u32>,
+}
 
 pub(crate) const CLOSED_HANDLE: u32 = 0;
 
 impl BorrowedHandle<'_> {
     pub(crate) const fn new(raw_handle: u32) -> Self {
-        Self(raw_handle, PhantomData)
+        Self {
+            handle: raw_handle,
+            _owner: PhantomData,
+        }
     }
 
     pub const fn active_thread() -> Self {
@@ -33,11 +39,11 @@ impl BorrowedHandle<'_> {
     }
 
     pub(crate) fn as_raw(&self) -> u32 {
-        self.0
+        self.handle
     }
 
     pub(crate) fn into_raw(self) -> u32 {
-        self.0
+        self.handle
     }
 
     pub(crate) const fn invalid() -> Self {
