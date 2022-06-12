@@ -4,7 +4,7 @@
 
 use crate::{
     ipc::{IpcRequest, ThisProcessId},
-    os::{BorrowHandle, OwnedHandle},
+    os::{AsHandle, OwnedHandle},
     result::Result,
     svc,
 };
@@ -51,12 +51,12 @@ impl Srv {
         debug!("Registering this process as client of `srv:`...");
         IpcRequest::command(0x1)
             .translate_parameter(ThisProcessId)
-            .dispatch(self.handle.handle())
+            .dispatch(&self.handle)
             .map(drop)
     }
 
     pub fn enable_notifications(&self) -> Result<OwnedHandle> {
-        let reply = IpcRequest::command(0x2).dispatch(self.handle.handle())?;
+        let reply = IpcRequest::command(0x2).dispatch(&self.handle)?;
         Ok(unsafe { reply.finish_results().read_handle() })
     }
 
@@ -64,7 +64,7 @@ impl Srv {
         let ((name0, name1), len) = unsafe { write_str_param(service_name) };
         let mut reply = IpcRequest::command(0x3)
             .parameters(&[name0, name1, len, max_sessions])
-            .dispatch(self.handle.borrow_handle())?
+            .dispatch(&self.handle)?
             .finish_results();
 
         Ok(unsafe { reply.read_handle() })
@@ -74,7 +74,7 @@ impl Srv {
         let ((name0, name1), len) = unsafe { write_str_param(service_name) };
         let _reply = IpcRequest::command(0x4)
             .parameters(&[name0, name1, len])
-            .dispatch(self.borrow_handle())?;
+            .dispatch(self.as_handle())?;
 
         Ok(())
     }
@@ -84,7 +84,7 @@ impl Srv {
 
         let mut reply = IpcRequest::command(0x5)
             .parameters(&[arg0, arg1, len, self.blocking_policy.to_value()])
-            .dispatch(self.borrow_handle())?
+            .dispatch(self.as_handle())?
             .finish_results();
 
         Ok(unsafe { reply.read_handle() })
@@ -93,7 +93,7 @@ impl Srv {
     pub fn subscribe(&self, notification_id: u32) -> Result<()> {
         let _reply = IpcRequest::command(0x9)
             .parameter(notification_id)
-            .dispatch(self.borrow_handle())?;
+            .dispatch(self.as_handle())?;
 
         Ok(())
     }
@@ -101,13 +101,13 @@ impl Srv {
     pub fn unsubscribe(&self, notification_id: u32) -> Result<()> {
         let _reply = IpcRequest::command(0xa)
             .parameter(notification_id)
-            .dispatch(self.borrow_handle())?;
+            .dispatch(self.as_handle())?;
 
         Ok(())
     }
 
     pub fn receive_notification(&self) -> Result<u32> {
-        let mut reply = IpcRequest::command(0xb).dispatch(self.borrow_handle())?;
+        let mut reply = IpcRequest::command(0xb).dispatch(self.as_handle())?;
 
         Ok(reply.read_word())
     }
@@ -123,7 +123,7 @@ impl Srv {
                 notification_id,
                 publish_flags(coalesc_pending, ignore_overflow),
             ])
-            .dispatch(self.borrow_handle())?;
+            .dispatch(self.as_handle())?;
 
         Ok(())
     }
@@ -140,7 +140,7 @@ impl Srv {
                 notification_id,
                 publish_flags(coalesc_pending, ignore_overflow),
             ])
-            .dispatch(self.borrow_handle())?;
+            .dispatch(self.as_handle())?;
 
         let num_subscribers = reply.read_word() as usize;
 
@@ -156,7 +156,7 @@ impl Srv {
         let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
         let mut reply = IpcRequest::command(0xe)
             .parameters(&[arg0, arg1, len])
-            .dispatch(self.borrow_handle())?;
+            .dispatch(self.as_handle())?;
 
         Ok(reply.read_word() != 0)
     }
@@ -181,8 +181,8 @@ unsafe fn write_str_param(s: &str) -> ((u32, u32), u32) {
     ((buf.words[0], buf.words[1]), n as u32)
 }
 
-impl BorrowHandle for Srv {
-    fn borrow_handle(&self) -> crate::os::BorrowedHandle {
-        self.handle.borrow_handle()
+impl AsHandle for Srv {
+    fn as_handle(&self) -> crate::os::BorrowedHandle {
+        self.handle.as_handle()
     }
 }

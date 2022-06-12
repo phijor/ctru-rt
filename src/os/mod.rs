@@ -19,7 +19,7 @@ pub type ValidRawHandle = NonZeroU32;
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct BorrowedHandle<'handle> {
-    handle: RawHandle,
+    pub(crate) handle: RawHandle,
     _owner: PhantomData<&'handle OwnedHandle>,
 }
 
@@ -39,18 +39,6 @@ impl BorrowedHandle<'_> {
 
     pub const fn active_process() -> Self {
         Self::new(0xFFFF_8001)
-    }
-
-    pub(crate) fn as_raw(&self) -> RawHandle {
-        self.handle
-    }
-
-    pub(crate) fn into_raw(self) -> RawHandle {
-        self.handle
-    }
-
-    pub(crate) const fn invalid() -> Self {
-        Self::new(CLOSED_HANDLE)
     }
 }
 
@@ -75,7 +63,7 @@ impl OwnedHandle {
         unsafe { svc::close_handle(raw_handle) }
     }
 
-    pub fn handle(&self) -> BorrowedHandle {
+    fn handle(&self) -> BorrowedHandle {
         BorrowedHandle::new(self.handle.get())
     }
 
@@ -123,7 +111,7 @@ impl super::svc::IntoRegister for OwnedHandle {
 impl super::svc::IntoRegister for BorrowedHandle<'_> {
     type Register = u32;
     unsafe fn into_register(self) -> u32 {
-        self.into_raw()
+        self.handle
     }
 }
 
@@ -157,13 +145,34 @@ impl MemoryRegion {
     }
 }
 
-pub trait BorrowHandle {
-    fn borrow_handle(&self) -> BorrowedHandle;
+pub trait AsHandle {
+    fn as_handle(&self) -> BorrowedHandle<'_>;
 }
 
-impl BorrowHandle for OwnedHandle {
-    fn borrow_handle(&self) -> BorrowedHandle {
+impl AsHandle for BorrowedHandle<'_> {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        Self::new(self.handle)
+    }
+}
+
+impl AsHandle for OwnedHandle {
+    #[inline]
+    fn as_handle(&self) -> BorrowedHandle {
         self.handle()
+    }
+}
+
+impl<T: AsHandle> AsHandle for &T {
+    #[inline]
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        T::as_handle(self)
+    }
+}
+
+impl<T: AsHandle> AsHandle for &mut T {
+    #[inline]
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        T::as_handle(self)
     }
 }
 

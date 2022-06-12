@@ -105,7 +105,7 @@ impl Hid {
 
         // Get IPC handles, map memory
         debug!("Acquiring IPC handles for HID module...");
-        let reply = IpcRequest::command(0xa).dispatch(service_handle.handle())?;
+        let reply = IpcRequest::command(0xa).dispatch(&service_handle)?;
 
         let [memory_handle, pad0, pad1, accelerometer, gyroscope, debugpad]: [OwnedHandle; 6] =
             unsafe { reply.finish_results().read_translate_result() };
@@ -127,7 +127,7 @@ impl Hid {
 
     fn enable_accelerometer(&self) -> Result<()> {
         IpcRequest::command(0xa)
-            .dispatch(self.service_handle.handle())
+            .dispatch(&self.service_handle)
             .map(drop)
     }
 

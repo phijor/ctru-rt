@@ -246,7 +246,7 @@ impl<'h, const N: usize> TranslateParameter for [BorrowedHandle<'h>; N] {
         cmdbuf.write(header);
 
         for handle in self {
-            cmdbuf.write(handle.as_raw())
+            cmdbuf.write(handle.handle)
         }
     }
 }
@@ -256,7 +256,7 @@ impl<'h> TranslateParameter for BorrowedHandle<'h> {
     fn encode(self, cmdbuf: &mut CommandBufferWriter) {
         let header = TYPE_HANDLE;
         cmdbuf.write(header);
-        cmdbuf.write(self.as_raw())
+        cmdbuf.write(self.handle)
     }
 }
 

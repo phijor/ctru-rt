@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 
 use crate::{result::Result, svc};
 
-use super::{BorrowHandle, OwnedHandle, BorrowedHandle};
+use super::{AsHandle, OwnedHandle, BorrowedHandle};
 
 // /// Types of resource limit
 // typedef enum {
@@ -77,7 +77,7 @@ impl<'proc> ProcessLimits<'proc> {
     pub(crate) fn get(&self, type_: LimitType) -> Limit<'_> {
         Limit {
             type_,
-            limits_handle: self.handle.borrow_handle(),
+            limits_handle: self.handle.as_handle(),
         }
     }
 

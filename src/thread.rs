@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::early_debug;
-use crate::os::{BorrowHandle, OwnedHandle};
+use crate::os::{AsHandle, OwnedHandle};
 use crate::result::Result;
 use crate::svc::{self, Timeout};
 
@@ -107,7 +107,7 @@ where
 {
     pub fn join(self) -> Result<T> {
         let Self { handle, memory } = self;
-        svc::wait_synchronization(handle.borrow_handle(), Timeout::forever())?;
+        svc::wait_synchronization(handle.as_handle(), Timeout::forever())?;
 
         // SAFETY: The thread using this memory exited.
         // We own the only pointer to the location of the return value.
@@ -121,7 +121,7 @@ where
     }
 
     pub fn is_running(&self) -> bool {
-        svc::wait_synchronization(self.handle.borrow_handle(), Timeout::none()).is_err()
+        svc::wait_synchronization(self.handle.as_handle(), Timeout::none()).is_err()
     }
 }
 #[derive(Debug)]

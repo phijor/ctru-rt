@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::os::{BorrowHandle, BorrowedHandle, OwnedHandle, RawHandle, SystemTick, CLOSED_HANDLE};
+use crate::os::{AsHandle, BorrowedHandle, OwnedHandle, RawHandle, SystemTick, CLOSED_HANDLE};
 use crate::result::Result;
 use crate::svc::{self, Timeout};
 
@@ -35,15 +35,15 @@ impl Event {
     }
 
     pub fn wait(&self, timeout: Timeout) -> Result<()> {
-        svc::wait_synchronization(self.borrow_handle(), timeout)
+        svc::wait_synchronization(self.as_handle(), timeout)
     }
 
     pub fn clear(&self) -> Result<()> {
-        svc::clear_event(self.borrow_handle())
+        svc::clear_event(self.as_handle())
     }
 
     pub fn signal(&self) -> Result<()> {
-        svc::signal_event(self.borrow_handle())
+        svc::signal_event(self.as_handle())
     }
 
     pub fn wait_all(events: &[Self], timeout: Timeout) -> Result<()> {
@@ -64,14 +64,14 @@ impl Event {
     }
 
     pub fn duplicate(&self) -> Result<Self> {
-        let duplicated = svc::duplicate_handle(self.borrow_handle())?;
+        let duplicated = svc::duplicate_handle(self.as_handle())?;
         Ok(Self { handle: duplicated })
     }
 }
 
-impl BorrowHandle for Event {
-    fn borrow_handle(&self) -> BorrowedHandle {
-        self.handle.borrow_handle()
+impl AsHandle for Event {
+    fn as_handle(&self) -> BorrowedHandle {
+        self.handle.as_handle()
     }
 }
 
@@ -140,8 +140,8 @@ pub struct OsMutex {
 pub type Mutex<T> = lock_api::Mutex<OsMutex, T>;
 pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, OsMutex, T>;
 
-impl BorrowHandle for AtomicHandle {
-    fn borrow_handle(&self) -> BorrowedHandle {
+impl AsHandle for AtomicHandle {
+    fn as_handle(&self) -> BorrowedHandle {
         let raw_handle = self.0.load(Ordering::SeqCst);
         BorrowedHandle::new(raw_handle)
     }
@@ -162,12 +162,12 @@ impl OsMutex {
     }
 
     pub unsafe fn lock(&self, timeout: Timeout) -> Result<()> {
-        svc::wait_synchronization(self.handle.borrow_handle(), timeout)?;
+        svc::wait_synchronization(self.handle.as_handle(), timeout)?;
         Ok(())
     }
 
     pub unsafe fn unlock(&self) -> Result<()> {
-        svc::release_mutex(self.handle.borrow_handle())?;
+        svc::release_mutex(self.handle.as_handle())?;
         Ok(())
     }
 
@@ -266,7 +266,7 @@ impl AddressArbiter {
         timeout: Timeout,
     ) -> Result<()> {
         svc::arbitrate_address(
-            self.arbiter.borrow_handle(),
+            self.arbiter.as_handle(),
             address as *const T as usize,
             arbitration_type,
             value,

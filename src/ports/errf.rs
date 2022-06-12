@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::ipc::IpcRequest;
-use crate::os::{BorrowHandle, OwnedHandle, BorrowedHandle};
+use crate::os::{OwnedHandle, BorrowedHandle};
 use crate::result::{Result, ResultCode};
 use crate::svc;
 
@@ -153,7 +153,7 @@ impl ErrF {
     pub fn throw(&self, error: &ErrorInfo) -> Result<()> {
         let _ = IpcRequest::command(0x1)
             .parameters(error.as_words())
-            .dispatch(self.port.borrow_handle())?;
+            .dispatch(&self.port)?;
 
         Ok(())
     }

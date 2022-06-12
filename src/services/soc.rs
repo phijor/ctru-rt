@@ -6,7 +6,7 @@ use crate::ports::srv::Srv;
 use crate::{
     heap::PageAlignedBuffer,
     ipc::{IpcParameter, IpcRequest, IpcResult, ThisProcessId},
-    os::{mem::MemoryPermission, BorrowHandle, OwnedHandle},
+    os::{mem::MemoryPermission, AsHandle, OwnedHandle},
     result::{ErrorCode as SystemErrorCode, Result as SystemResult},
     svc, tls,
 };
@@ -41,8 +41,8 @@ impl Soc {
         let _reply = IpcRequest::command(0x1)
             .parameter(buffer.size())
             .translate_parameter(ThisProcessId)
-            .translate_parameter(buffer_handle.borrow_handle())
-            .dispatch(handle.borrow_handle())?;
+            .translate_parameter(buffer_handle.as_handle())
+            .dispatch(&handle)?;
 
         debug!("Initialized!");
         Ok(Self {
@@ -65,7 +65,7 @@ impl Soc {
                 protocol.to_value(),
             ])
             .translate_parameter(ThisProcessId)
-            .dispatch(self.handle.handle())?;
+            .dispatch(&self.handle)?;
 
         Ok(reply.read_result())
     }
@@ -75,7 +75,7 @@ impl Soc {
             .parameter(fd)
             .parameter(backlog as u32)
             .translate_parameter(ThisProcessId)
-            .dispatch(self.handle.handle())
+            .dispatch(&self.handle)
             .map_err(SocketError::SystemErr)?;
 
         SocketError::into_result(reply.read_result())
@@ -93,7 +93,7 @@ impl Soc {
             .parameter(fd)
             .parameter(address_data.len())
             .translate_parameter(ThisProcessId)
-            .dispatch(self.handle.handle())?;
+            .dispatch(&self.handle)?;
 
         unimplemented!()
     }
@@ -103,14 +103,14 @@ impl Soc {
     }
 
     pub fn gethostid(&self) -> Result<[u8; 4]> {
-        let mut reply = IpcRequest::command(0x16).dispatch(self.handle.borrow_handle())?;
+        let mut reply = IpcRequest::command(0x16).dispatch(&self.handle)?;
 
         Ok(reply.read_word().to_ne_bytes())
     }
 
     fn shutdown(&self) -> SystemResult<()> {
         IpcRequest::command(0x19)
-            .dispatch(self.handle.handle())
+            .dispatch(&self.handle)
             .map(drop)
     }
 

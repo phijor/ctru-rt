@@ -6,7 +6,7 @@ use crate::ipc::{IpcRequest, StaticBuffer};
 use crate::os::mem::MemoryPermission;
 use crate::os::{
     sharedmem::{MappedBlock, SharedMemoryMapper},
-    BorrowHandle, OwnedHandle, BorrowedHandle,
+    AsHandle, OwnedHandle, BorrowedHandle,
 };
 use crate::ports::srv::Srv;
 use crate::result::{ErrorCode, Result};
@@ -414,7 +414,7 @@ impl Gpu {
         let _reply = IpcRequest::command(0x16)
             .parameter(u32::from(flags))
             .translate_parameter(owner_process)
-            .dispatch(service_handle.handle())?;
+            .dispatch(&service_handle)?;
 
         Ok(AccessRightsToken { service_handle })
     }
@@ -430,8 +430,8 @@ impl Gpu {
         let (result_code, gsp_module_thread_index, queue_handle) = {
             let (result_code, mut reply) = IpcRequest::command(0x13)
                 .parameter(flags as u32)
-                .translate_parameter(gpu_events.borrow_handle())
-                .dispatch_no_fail(access.borrow_handle())?;
+                .translate_parameter(gpu_events.as_handle())
+                .dispatch_no_fail(access.as_handle())?;
 
             (result_code, (reply.read_word() & 0xff) as u8, unsafe {
                 reply.finish_results().read_handle()
@@ -569,10 +569,10 @@ impl Gpu {
             );
             match mask {
                 None => {
-                    write_graphics_register(access.service_handle.borrow_handle(), register, value)?
+                    write_graphics_register(access.service_handle.as_handle(), register, value)?
                 }
                 Some(mask) => write_graphics_register_masked(
-                    access.service_handle.borrow_handle(),
+                    access.service_handle.as_handle(),
                     register,
                     value,
                     mask,
@@ -603,7 +603,7 @@ impl Gpu {
     pub fn set_lcd_force_blank(&mut self, flags: u8) -> Result<()> {
         let _ = IpcRequest::command(0x0b)
             .parameter(flags as u32)
-            .dispatch(self.access.borrow_handle())?;
+            .dispatch(&self.access)?;
         Ok(())
     }
 }
@@ -615,14 +615,16 @@ struct AccessRightsToken {
 }
 
 impl AccessRightsToken {
-    pub fn borrow_handle(&self) -> BorrowedHandle {
-        self.service_handle.handle()
-    }
-
     fn release(&mut self) -> Result<()> {
         debug!("Releasing GPU access rights");
-        let _ = IpcRequest::command(0x17).dispatch(self.service_handle.borrow_handle())?;
+        let _ = IpcRequest::command(0x17).dispatch(&self.service_handle)?;
         Ok(())
+    }
+}
+
+impl AsHandle for AccessRightsToken {
+    fn as_handle(&self) -> BorrowedHandle {
+        self.service_handle.as_handle()
     }
 }
 

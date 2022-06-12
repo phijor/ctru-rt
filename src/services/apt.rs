@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 
 use crate::ipc::{IpcParameter, IpcRequest};
-use crate::os::{BorrowHandle, OwnedHandle, BorrowedHandle};
+use crate::os::{AsHandle, OwnedHandle, BorrowedHandle};
 use crate::ports::srv::Srv;
 use crate::result::{Result, ERROR_NOT_AUTHORIZED};
 use crate::sync::{Event, Mutex, OsMutex};
@@ -58,7 +58,7 @@ impl<'access, 'srv> Apt<'access, 'srv> {
     fn get_lock(&self, flags: u16) -> Result<OsMutex> {
         let mut reply = IpcRequest::command(0x01)
             .parameter(u32::from(flags))
-            .dispatch(self.borrow_handle())?;
+            .dispatch(&self.handle)?;
 
         let _applet_attributes = reply.read_word();
         let _apt_state = reply.read_word();
@@ -73,7 +73,7 @@ impl<'access, 'srv> Apt<'access, 'srv> {
         let reply = IpcRequest::command(0x02)
             .parameter(app_id)
             .parameter(attributes)
-            .dispatch(self.borrow_handle())?;
+            .dispatch(&self.handle)?;
 
         let mut reply = reply.finish_results();
         let signal_event = unsafe { Event::from_handle(reply.read_handle()) };
@@ -85,14 +85,14 @@ impl<'access, 'srv> Apt<'access, 'srv> {
     fn enable(&self, attributes: AppletAttributes) -> Result<()> {
         let _ = IpcRequest::command(0x03)
             .parameter(attributes)
-            .dispatch(self.borrow_handle())?;
+            .dispatch(&self.handle)?;
         Ok(())
     }
 }
 
-impl BorrowHandle for Apt<'_, '_> {
-    fn borrow_handle(&self) -> BorrowedHandle {
-        self.handle.borrow_handle()
+impl AsHandle for Apt<'_, '_> {
+    fn as_handle(&self) -> BorrowedHandle {
+        self.handle.as_handle()
     }
 }
 
