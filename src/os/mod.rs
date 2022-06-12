@@ -19,7 +19,7 @@ pub type RawHandle = u32;
 #[repr(transparent)]
 pub struct BorrowedHandle<'handle> {
     handle: RawHandle,
-    _owner: PhantomData<&'handle u32>,
+    _owner: PhantomData<&'handle OwnedHandle>,
 }
 
 pub(crate) const CLOSED_HANDLE: RawHandle = 0;
