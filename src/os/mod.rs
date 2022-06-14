@@ -32,14 +32,6 @@ impl BorrowedHandle<'_> {
             _owner: PhantomData,
         }
     }
-
-    pub const fn active_thread() -> Self {
-        Self::new(0xFFFF_8000)
-    }
-
-    pub const fn active_process() -> Self {
-        Self::new(0xFFFF_8001)
-    }
 }
 
 #[repr(transparent)]
@@ -93,6 +85,13 @@ impl fmt::Debug for OwnedHandle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_tuple("Handle").field(&self.handle).finish()
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u32)]
+pub enum PseudoHandle {
+    ActiveThread = 0xFFFF_8000,
+    ActiveProcess = 0xFFFF_8001,
 }
 
 impl super::svc::FromRegister for OwnedHandle {
@@ -152,6 +151,12 @@ pub trait AsHandle {
 impl AsHandle for BorrowedHandle<'_> {
     fn as_handle(&self) -> BorrowedHandle<'_> {
         Self::new(self.handle)
+    }
+}
+
+impl AsHandle for PseudoHandle {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        BorrowedHandle::new(*self as u32)
     }
 }
 

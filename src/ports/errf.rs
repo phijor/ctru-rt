@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::ipc::IpcRequest;
-use crate::os::{BorrowedHandle, OwnedHandle};
+use crate::os::{AsHandle, OwnedHandle, PseudoHandle};
 use crate::result::{Result, ResultCode};
 use crate::svc;
 
@@ -97,7 +97,7 @@ impl ErrorInfo {
     }
 
     fn current_process_id() -> u32 {
-        svc::get_process_id(BorrowedHandle::active_process()).unwrap_or(0)
+        svc::get_process_id(PseudoHandle::ActiveProcess.as_handle()).unwrap_or(0)
     }
 
     #[inline(never)]

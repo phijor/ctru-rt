@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::ipc::{IpcRequest, StaticBuffer};
+use crate::os::PseudoHandle;
 use crate::os::mem::MemoryPermission;
 use crate::os::{
     sharedmem::{MappedBlock, SharedMemoryMapper},
@@ -400,7 +401,7 @@ impl Gpu {
         const ACCESS_FLAGS: u8 = 0x00;
         let mut access = Self::aquire_access(
             service_handle,
-            BorrowedHandle::active_process(),
+            PseudoHandle::ActiveProcess,
             ACCESS_FLAGS,
         )?;
 
@@ -413,14 +414,16 @@ impl Gpu {
         })
     }
 
-    fn aquire_access(
+    fn aquire_access<'h, Handle>(
         service_handle: OwnedHandle,
-        owner_process: BorrowedHandle,
+        owner_process: Handle,
         flags: u8,
-    ) -> Result<AccessRightsToken> {
+    ) -> Result<AccessRightsToken>
+        where Handle: AsHandle + 'h
+    {
         let _reply = IpcRequest::command(0x16)
             .parameter(u32::from(flags))
-            .translate_parameter(owner_process)
+            .translate_parameter(owner_process.as_handle())
             .dispatch(&service_handle)?;
 
         Ok(AccessRightsToken { service_handle })

@@ -86,8 +86,11 @@ impl<'proc> ProcessLimits<'proc> {
     }
 }
 
-pub fn process_limits(process_handle: BorrowedHandle<'_>) -> Result<ProcessLimits<'_>> {
-    let handle = svc::get_resource_limit(process_handle)?;
+pub fn process_limits<'h, Handle>(process_handle: Handle) -> Result<ProcessLimits<'h>>
+where
+    Handle: AsHandle + 'h,
+{
+    let handle = svc::get_resource_limit(process_handle.as_handle())?;
 
     Ok(ProcessLimits {
         handle,
