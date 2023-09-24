@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::MemoryRegion;
+use num_enum::IntoPrimitive;
 
-use ctru_rt_macros::EnumCast;
+use super::MemoryRegion;
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
@@ -56,8 +56,8 @@ impl MemoryOperation {
     }
 }
 
+#[derive(Debug, Clone, Copy, IntoPrimitive)]
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, EnumCast)]
 pub enum MemoryPermission {
     None = 0,
     R = 1,

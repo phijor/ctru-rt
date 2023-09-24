@@ -7,13 +7,12 @@ use core::ptr::NonNull;
 use crate::result::{ErrorCode, Result};
 use crate::services::gsp::gpu::{FramebufferIndex, Gpu, InterruptEvent, Screen, ScreenDimensions};
 
-use ctru_rt_macros::EnumCast;
-
 use alloc::alloc::Layout;
 use log::{debug, info};
+use num_enum::IntoPrimitive;
 
-#[derive(Debug, EnumCast, Clone, Copy, PartialEq, Eq)]
-#[enum_cast(value_type = "u8")]
+#[derive(Debug, IntoPrimitive, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum FramebufferColorFormat {
     RGBA8,
     BGR8,
@@ -115,7 +114,7 @@ impl ScreenConfiguration {
     }
 
     const fn mode(&self, screen: Screen) -> u32 {
-        let mut mode = self.format.to_value() as u32;
+        let mut mode = (self.format as u8) as u32;
         if let Screen::Top = screen {
             mode |= 1 << 6; // 2D mode
         }
@@ -161,7 +160,7 @@ impl<'g> Grapics<'g> {
             Level::Usage,
             Summary::OutOfResource,
             Module::Application,
-            CommonDescription::InvalidResultValue.to_value(),
+            CommonDescription::InvalidResultValue as u32,
         );
 
         debug!("Configuring top screen framebuffer...");

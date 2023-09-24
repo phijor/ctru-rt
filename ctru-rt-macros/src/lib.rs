@@ -5,11 +5,9 @@
 #![allow(dead_code)]
 
 mod entry;
-mod enum_cast;
 mod ipc_call;
 mod svc_spec;
 
-use crate::enum_cast::EnumCast;
 use crate::svc_spec::SvcSpec;
 
 use syn::{parse_macro_input, AttributeArgs, ItemFn};
@@ -242,12 +240,6 @@ pub fn svc(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let output: proc_macro2::TokenStream = call_spec.to_asm_call();
 
     output.into()
-}
-
-#[proc_macro_derive(EnumCast, attributes(enum_cast))]
-pub fn enum_cast_impl(tokens: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let enum_cast = parse_macro_input!(tokens as EnumCast);
-    enum_cast.emit().into()
 }
 
 #[proc_macro_attribute]

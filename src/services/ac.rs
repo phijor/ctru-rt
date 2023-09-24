@@ -48,7 +48,7 @@ impl Ac {
                     Level::Fatal,
                     Summary::InvalidResultValue,
                     Module::Ac,
-                    CommonDescription::InvalidResultValue.to_value(),
+                    CommonDescription::InvalidResultValue.into(),
                 ));
             }
         };

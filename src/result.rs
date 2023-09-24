@@ -5,9 +5,8 @@
 use core::ops::{ControlFlow, FromResidual};
 use core::{num::NonZeroU32, ops::Try};
 
-use ctru_rt_macros::EnumCast;
-
 use alloc::fmt;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 pub type Result<T> = core::result::Result<T, ErrorCode>;
 
@@ -102,9 +101,9 @@ impl From<ErrorCode> for ResultCode {
 
 impl ResultCode {
     pub const fn new(level: Level, summary: Summary, module: Module, description: u32) -> Self {
-        let level: u32 = level.to_value();
-        let summary: u32 = summary.to_value();
-        let module: u8 = module.to_value();
+        let level: u32 = level as u32;
+        let summary: u32 = summary as u32;
+        let module: u8 = module as u8;
         Self(level << 27 | summary << 21 | (module as u32) << 10 | (description & 0b11_1111_1111))
     }
 
@@ -125,19 +124,19 @@ pub trait ResultValue {
     }
 
     fn level(&self) -> ::core::result::Result<Level, u32> {
-        Level::from_value((self.value() >> 27) & 0b1_1111)
+        Level::try_from((self.value() >> 27) & 0b1_1111)
     }
 
     fn summary(&self) -> ::core::result::Result<Summary, u32> {
-        Summary::from_value((self.value() >> 21) & 0b11_1111)
+        Summary::try_from((self.value() >> 21) & 0b11_1111)
     }
 
     fn module(&self) -> ::core::result::Result<Module, u8> {
-        Module::from_value(((self.value() >> 10) & 0b1111_1111) as u8)
+        Module::try_from(((self.value() >> 10) & 0b1111_1111) as u8)
     }
 
     fn description(&self) -> ::core::result::Result<CommonDescription, u32> {
-        CommonDescription::from_value(self.value() & 0b11_1111_1111)
+        CommonDescription::try_from(self.value() & 0b11_1111_1111)
     }
 }
 
@@ -195,8 +194,9 @@ macro_rules! result_value_dbg_fmt {
 result_value_dbg_fmt!(ResultCode);
 result_value_dbg_fmt!(ErrorCode);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumCast)]
-#[enum_cast(value_type = "u32")]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[num_enum(error_type(name = u32, constructor = u32::from))]
+#[repr(u32)]
 pub enum Level {
     Success,
     Info,
@@ -209,8 +209,9 @@ pub enum Level {
     Fatal,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumCast)]
-#[enum_cast(value_type = "u32")]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[num_enum(error_type(name = u32, constructor = u32::from))]
+#[repr(u32)]
 pub enum Summary {
     Success,
     Nop,
@@ -227,8 +228,9 @@ pub enum Summary {
     InvalidResultValue = 63,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, EnumCast)]
-#[enum_cast(value_type = "u8")]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[num_enum(error_type(name = u8, constructor = u8::from))]
+#[repr(u8)]
 pub enum Module {
     Common,
     Kernel,
@@ -334,8 +336,9 @@ pub trait Description {
     fn into_code(self) -> u32;
 }
 
-#[derive(Debug, EnumCast)]
-#[enum_cast(value_type = "u32")]
+#[derive(Debug, IntoPrimitive, TryFromPrimitive)]
+#[num_enum(error_type(name = u32, constructor = u32::from))]
+#[repr(u32)]
 pub enum CommonDescription {
     Success = 0,
     InvalidSection = 1000,
@@ -366,7 +369,7 @@ pub enum CommonDescription {
 
 impl Description for CommonDescription {
     fn into_code(self) -> u32 {
-        self.to_value()
+        self.into()
     }
 }
 
@@ -374,11 +377,11 @@ pub const ERROR_OUT_OF_MEMORY: ErrorCode = ErrorCode::new(
     Level::Fatal,
     Summary::OutOfResource,
     Module::Application,
-    CommonDescription::OutOfMemory.to_value(),
+    CommonDescription::OutOfMemory as u32,
 );
 pub const ERROR_NOT_AUTHORIZED: ErrorCode = ErrorCode::new(
     Level::Fatal,
     Summary::Internal,
     Module::Application,
-    CommonDescription::NotAuthorized.to_value(),
+    CommonDescription::NotAuthorized as u32,
 );

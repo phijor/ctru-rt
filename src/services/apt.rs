@@ -5,13 +5,13 @@
 use core::marker::PhantomData;
 use core::ops::Deref;
 
+use num_enum::IntoPrimitive;
+
 use crate::ipc::{IpcParameter, IpcRequest};
 use crate::os::{AsHandle, BorrowedHandle, OwnedHandle};
 use crate::ports::srv::Srv;
 use crate::result::Result;
 use crate::sync::{Event, Mutex, OsMutex};
-
-use ctru_rt_macros::EnumCast;
 
 const APT_SERVICE_NAMES: [&str; 3] = ["APT:S", "APT:A", "APT:U"];
 
@@ -24,7 +24,7 @@ impl AppletAttributes {
     }
 
     const fn position(self, position: AppPosition) -> Self {
-        Self(self.0 | position.to_value())
+        Self(self.0 | (position as u8))
     }
 
     const fn manual_gpu_rights(self) -> Self {
@@ -150,8 +150,8 @@ impl<'srv> Deref for AptLock<'srv> {
     }
 }
 
-#[derive(Debug, EnumCast)]
-#[enum_cast(value_type = "u16")]
+#[derive(Debug, IntoPrimitive, Clone, Copy)]
+#[repr(u16)]
 enum AppId {
     HomeMenu = 0x101,
     Camera = 0x110,
@@ -175,8 +175,8 @@ enum AppId {
     Memolib = 0x409,
 }
 
-#[derive(Debug, EnumCast)]
-#[enum_cast(value_type = "u8")]
+#[derive(Debug, IntoPrimitive)]
+#[repr(u8)]
 enum AppPosition {
     App,
     AppLib,
@@ -188,6 +188,6 @@ enum AppPosition {
 
 impl IpcParameter for AppId {
     fn encode(&self) -> u32 {
-        self.to_value().into()
+        *self as u16 as u32
     }
 }

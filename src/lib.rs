@@ -75,12 +75,3 @@ pub fn __aeabi_unwind_cpp_pr1() {}
 
 #[no_mangle]
 pub fn __aeabi_unwind_cpp_pr0() {}
-
-pub mod util {
-    trait EnumCast: Sized {
-        type Value;
-        fn parse_value(value: Self::Value) -> core::result::Result<Self, Self::Value>;
-
-        fn as_value(&self) -> Self::Value;
-    }
-}

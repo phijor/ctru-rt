@@ -13,7 +13,7 @@ use crate::{
 
 use core::{marker::PhantomData, num::NonZeroU32};
 
-use ctru_rt_macros::EnumCast;
+use num_enum::IntoPrimitive;
 use log::debug;
 
 #[derive(Debug)]
@@ -60,9 +60,9 @@ impl Soc {
     ) -> SystemResult<SocketFd<'_>> {
         let mut reply = IpcRequest::command(0x2)
             .parameters(&[
-                domain.to_value(),
-                socket_type.to_value(),
-                protocol.to_value(),
+                u32::from(domain),
+                u32::from(socket_type),
+                u32::from(protocol),
             ])
             .translate_parameter(ThisProcessId)
             .dispatch(&self.handle)?;
@@ -128,9 +128,9 @@ impl Drop for Soc {
     }
 }
 
-#[derive(Debug, EnumCast)]
+#[derive(Debug, IntoPrimitive)]
 #[non_exhaustive]
-#[enum_cast(value_type = "u32")]
+#[repr(u32)]
 pub enum Domain {
     AfInet = 2,
 }
@@ -141,17 +141,17 @@ impl Default for Domain {
     }
 }
 
-#[derive(Debug, EnumCast)]
+#[derive(Debug, IntoPrimitive)]
 #[non_exhaustive]
-#[enum_cast(value_type = "u32")]
+#[repr(u32)]
 pub enum Type {
     Stream = 1,
     Datagram = 2,
 }
 
-#[derive(Debug, EnumCast)]
+#[derive(Debug, IntoPrimitive)]
 #[non_exhaustive]
-#[enum_cast(value_type = "u32")]
+#[repr(u32)]
 pub enum Protocol {
     Default = 0,
 }

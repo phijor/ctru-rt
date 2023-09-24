@@ -14,13 +14,12 @@ use crate::svc::Timeout;
 use crate::sync::{Event, ResetType};
 
 use log::{debug, trace, warn};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use ctru_rt_macros::EnumCast;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumCast)]
-#[enum_cast(value_type = "usize")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive)]
+#[repr(usize)]
 pub enum Screen {
     Top,
     Bottom,
@@ -83,8 +82,8 @@ impl From<InterruptHeader> for u32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumCast)]
-#[enum_cast(value_type = "u8")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[repr(u8)]
 pub enum InterruptEvent {
     PSC0,
     PSC1,
@@ -109,12 +108,16 @@ impl InterruptEventSet {
         Self(0)
     }
 
+    fn mask(event: InterruptEvent) -> u32 {
+        1 << u8::from(event)
+    }
+
     fn add(&mut self, event: InterruptEvent) {
-        self.0 |= 1 << event.to_value();
+        self.0 |= Self::mask(event);
     }
 
     pub fn contains(&self, event: InterruptEvent) -> bool {
-        self.0 & (1 << event.to_value()) != 0
+        self.0 & Self::mask(event) != 0
     }
 }
 
@@ -132,8 +135,8 @@ impl core::fmt::Debug for InterruptEventSet {
     }
 }
 
-#[derive(Debug, EnumCast, Clone, Copy, PartialEq, Eq)]
-#[enum_cast(value_type = "u8")]
+#[derive(Debug, IntoPrimitive, TryFromPrimitive, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum FramebufferIndex {
     First,
     Second,
@@ -178,7 +181,7 @@ impl FramebufferInfoHeader {
         const FB_UPDATE: usize = 1;
 
         let mut updated: [u8; 4] = self.0.to_le_bytes();
-        updated[FB_INDEX] = index.to_value();
+        updated[FB_INDEX] = u8::from(index);
         updated[FB_UPDATE] = 1;
         Self(u32::from_le_bytes(updated))
     }
@@ -191,12 +194,13 @@ impl FramebufferInfo {
 
     fn load_index(&self, order: Ordering) -> FramebufferIndex {
         let index = self.header().load(order).to_le_bytes()[0];
-        FramebufferIndex::from_value(index).expect("Invalid framebuffer index from GSP")
+        FramebufferIndex::try_from(index).expect("Invalid framebuffer index from GSP")
     }
 
     fn info_at(&self, index: FramebufferIndex) -> *mut FramebufferInfoInner {
+        // TODO: replace .offset() by .add()
         unsafe {
-            (self.info.offset(1) as *mut FramebufferInfoInner).offset(index.to_value() as isize)
+            (self.info.offset(1) as *mut FramebufferInfoInner).offset(u8::from(index) as isize)
         }
     }
 
@@ -229,7 +233,7 @@ impl FramebufferInfo {
     ) {
         debug!("Updating framebuffer: active = {:?}, fb0 = {:p}, fb1 = {:p}, stride = {}, format = {:b}", active_fb, fb0, fb1, stride, format);
         {
-            let active_fb = u32::from(active_fb.to_value());
+            let active_fb = u8::from(active_fb) as u32;
             let fb_info = FramebufferInfoInner {
                 active_framebuffer: active_fb,
                 fb0_vaddr: fb0 as u32,
@@ -290,9 +294,9 @@ impl InterruptInfo {
         let current_event_ptr = self.event_buf.offset(0x3 + block_idx as isize) as *const AtomicU32;
         let event_packed = (&*current_event_ptr).load(Ordering::SeqCst);
 
-        match InterruptEvent::from_value(event_packed.to_le_bytes()[3 - part_idx]) {
+        match InterruptEvent::try_from(event_packed.to_le_bytes()[3 - part_idx]) {
             Err(e) => {
-                warn!("GSP wrote an invalid interrupt event: 0x{:02x}", e);
+                warn!("GSP wrote an invalid interrupt event: 0x{:02x}", e.number);
                 None
             }
             Ok(event) => Some(event),
@@ -355,15 +359,15 @@ impl Sharedmem {
     }
 
     unsafe fn framebuffer_info_for(&mut self, screen: Screen) -> FramebufferInfo {
-        const INFO_BASE: isize = 0x80;
-        const SIZE: isize = 0x20;
+        const INFO_BASE: usize = 0x80;
+        const SIZE: usize = 0x20;
         const SCREEN_OFFSET: usize = 0x10;
 
-        let base = self.shared_memory.as_mut_ptr().offset(INFO_BASE);
-        let screen_offset = (screen.to_value() * SCREEN_OFFSET) as isize;
+        let base = self.shared_memory.as_mut_ptr().add(INFO_BASE);
+        let screen_offset = usize::from(screen) * SCREEN_OFFSET;
         let info = base
-            .offset(self.gsp_module_thread_index as isize * SIZE)
-            .offset(screen_offset);
+            .add(self.gsp_module_thread_index as usize * SIZE)
+            .add(screen_offset);
 
         FramebufferInfo { info }
     }

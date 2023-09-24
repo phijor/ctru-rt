@@ -9,13 +9,14 @@ use crate::{
     svc,
 };
 
-use ctru_rt_macros::EnumCast;
+use num_enum::{FromPrimitive, IntoPrimitive};
 use log::debug;
 
-#[derive(Debug, Copy, Clone, EnumCast)]
-#[enum_cast(value_type = "u32")]
+#[derive(Debug, Copy, Clone, FromPrimitive, IntoPrimitive)]
+#[repr(u32)]
 pub enum BlockingPolicy {
     Blocking = 0,
+    #[num_enum(default)]
     NonBlocking = 1,
 }
 
@@ -83,7 +84,7 @@ impl Srv {
         let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
 
         let mut reply = IpcRequest::command(0x5)
-            .parameters(&[arg0, arg1, len, self.blocking_policy.to_value()])
+            .parameters(&[arg0, arg1, len, u32::from(self.blocking_policy)])
             .dispatch(self.as_handle())?
             .finish_results();
 

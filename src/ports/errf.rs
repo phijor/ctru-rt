@@ -7,9 +7,8 @@ use crate::os::{BorrowedHandle, OwnedHandle};
 use crate::result::{Result, ResultCode};
 use crate::svc;
 
-use ctru_rt_macros::EnumCast;
-
 use log::debug;
+use num_enum::IntoPrimitive;
 
 use core::mem::{size_of, size_of_val};
 
@@ -18,8 +17,8 @@ extern "C" {
     fn returnaddress(frame: i32) -> *const u8;
 }
 
-#[derive(Debug, EnumCast)]
-#[enum_cast(value_type = "u8")]
+#[derive(Debug, IntoPrimitive)]
+#[repr(u8)]
 pub enum ErrorType {
     Generic,
     SystemMemoryDamaged,
@@ -35,8 +34,8 @@ impl Default for ErrorType {
     }
 }
 
-#[derive(Debug, EnumCast)]
-#[enum_cast(value_type = "u8")]
+#[derive(Debug, IntoPrimitive)]
+#[repr(u8)]
 pub enum ExceptionType {
     PrefetchAbort,
     DataAbort,
