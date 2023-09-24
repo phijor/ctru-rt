@@ -5,10 +5,8 @@
 #![no_std]
 #![feature(try_trait_v2)]
 #![feature(control_flow_enum)]
-#![feature(auto_traits)]
-#![feature(alloc_error_handler, allocator_api)]
-#![feature(new_uninit, maybe_uninit_array_assume_init)]
-#![feature(atomic_from_mut)]
+#![feature(alloc_error_handler)]
+#![feature(maybe_uninit_array_assume_init)]
 #![feature(link_llvm_intrinsics)]
 // Allow dead code for now
 #![allow(dead_code)]
