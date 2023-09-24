@@ -111,7 +111,7 @@ pub(crate) fn init() -> Result<()> {
                 0x0,
                 heap_size,
                 mem::MemoryPermission::Rw,
-            )?
+            )? as *mut u8
         };
 
         crate::svc::output_debug_string("Mapped heap");
@@ -154,7 +154,7 @@ pub(crate) fn init() -> Result<()> {
 }
 
 pub(crate) fn initialized() -> bool {
-    ALLOCATOR.lock().bottom() != 0
+    !ALLOCATOR.lock().bottom().is_null()
 }
 
 #[derive(Debug)]

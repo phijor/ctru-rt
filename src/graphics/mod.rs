@@ -220,7 +220,7 @@ pub(crate) mod vram {
         pub(crate) fn init(&self) {
             const VRAM_START: usize = 0x1F00_0000;
             const VRAM_SIZE: usize = 0x60_0000;
-            unsafe { self.inner.lock().init(VRAM_START, VRAM_SIZE) }
+            unsafe { self.inner.lock().init(VRAM_START as *mut u8, VRAM_SIZE) }
         }
 
         pub fn allocate(&self, layout: Layout) -> Result<NonNull<u8>, ()> {
