@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::os::reslimit::LimitType;
+use crate::os::AsHandle;
 use crate::{
     os::{
         mem::{MemoryOperation, MemoryPermission, QueryResult},
@@ -210,6 +211,10 @@ pub unsafe fn close_handle(handle: RawHandle) -> Result<()> {
 }
 
 pub fn wait_synchronization(handle: BorrowedHandle, timeout: Timeout) -> Result<()> {
+    debug_assert!(
+        handle.is_open(),
+        "svc::wait_synchronization(): Received closed handle!"
+    );
     let (ns_high, ns_low) = (timeout.reg_high(), timeout.reg_low());
 
     unsafe { svc!(0x24: (handle, _, ns_high, ns_low)) }

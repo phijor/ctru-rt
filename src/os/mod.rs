@@ -34,6 +34,7 @@ impl BorrowedHandle<'_> {
     }
 }
 
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct OwnedHandle {
     handle: ValidRawHandle,
@@ -146,6 +147,18 @@ impl MemoryRegion {
 
 pub trait AsHandle {
     fn as_handle(&self) -> BorrowedHandle<'_>;
+
+    fn as_raw_handle(&self) -> RawHandle {
+        self.as_handle().handle
+    }
+
+    fn is_closed(&self) -> bool {
+        self.as_raw_handle() == CLOSED_HANDLE
+    }
+
+    fn is_open(&self) -> bool {
+        !self.is_closed()
+    }
 }
 
 impl AsHandle for BorrowedHandle<'_> {
