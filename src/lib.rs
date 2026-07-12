@@ -5,7 +5,7 @@
 #![no_std]
 #![feature(try_trait_v2)]
 #![feature(try_trait_v2_residual)]
-#![feature(alloc_error_handler)]
+#![feature(allocator_api, alloc_error_handler)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(link_llvm_intrinsics)]
 // Allow dead code for now
@@ -54,7 +54,7 @@ global_asm! {
 unsafe extern "C" fn _ctru_rt_start() {
     crate::heap::init().expect("Failed to initialize heap");
     crate::early_debug!("Mapped heap.");
-    crate::graphics::vram::init();
+    crate::graphics::vram::init().expect("Failed to initialize VRAM allocator");
     crate::early_debug!("Mapped VRAM linear memory.");
 
     extern "Rust" {

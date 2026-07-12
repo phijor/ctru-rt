@@ -28,7 +28,7 @@ impl Soc {
         debug!("Creating memory block for buffer {:?}", buffer);
         let buffer_handle = unsafe {
             svc::create_memory_block(
-                buffer.as_ptr().unwrap().as_ptr() as usize,
+                buffer.as_ptr() as usize,
                 buffer.size(),
                 MemoryPermission::None,
                 MemoryPermission::Rw,
