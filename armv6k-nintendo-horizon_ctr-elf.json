@@ -1,20 +1,22 @@
 {
-  "data-layout": "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64",
+  "data-layout": "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64",
   "llvm-target": "armv6k-none-eabihf",
 
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
 
   "target-endian": "little",
-  "target-pointer-width": "32",
-  "target-c-int-width": "32",
-  "target-family": "unix",
+  "target-pointer-width": 32,
+  "target-c-int-width": 32,
+  "target-family": ["unix"],
 
   "arch": "arm",
   "os": "horizon",
+  "abi": "eabihf",
   "cpu": "mpcore",
 
-  "features": ["+vfp2", "hard-float"],
+  "features": "+vfp2",
+  "llvm-floatabi": "hard",
 
   "relocation-model": "static",
   "panic-strategy": "abort",
