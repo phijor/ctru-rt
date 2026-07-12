@@ -13,15 +13,14 @@ use ctru_rt::{
     ports::srv::Srv,
     result::Result,
     services::{gsp::gpu::Gpu, hid::Hid},
-    svc,
+    svc::{self, Timeout},
 };
 use log::{error, info};
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
     use ctru_rt::{debug::SvcDebugLog, svc::UserBreakReason};
-    let mut log = SvcDebugLog::default();
-    let _ = writeln!(log, "[PANIC] {}", info);
+    let _ = writeln!(SvcDebugLog, "[PANIC] {}", info);
 
     svc::user_break(UserBreakReason::Panic)
 }
@@ -41,6 +40,7 @@ fn run() -> Result<()> {
     let mut runs = 0..5;
     info!("Press START to exit");
     while !hid.last_keypad().start() {
+        svc::sleep_thread(Timeout::from_seconds(1));
         info!("Waiting for VBLANK0...");
 
         gfx.wait_vblank0().ok();
@@ -61,7 +61,7 @@ fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
-            let _ = error!("Failed to run: {:?}", e);
+            error!("Failed to run: {:?}", e);
             svc::exit_process()
         }
     }

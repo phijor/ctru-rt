@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::ipc::{IpcRequest, StaticBuffer};
-use crate::os::PseudoHandle;
 use crate::os::mem::MemoryPermission;
+use crate::os::PseudoHandle;
 use crate::os::{
     sharedmem::{MappedBlock, SharedMemoryMapper},
     AsHandle, BorrowedHandle, OwnedHandle,
@@ -14,10 +14,10 @@ use crate::result::{ErrorCode, Result};
 use crate::svc::Timeout;
 use crate::sync::{Event, ResetType};
 
-use log::{debug, trace, warn};
+use log::{debug, info, trace};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive)]
 #[repr(usize)]
@@ -200,16 +200,14 @@ impl FramebufferInfo {
 
     fn info_at(&self, index: FramebufferIndex) -> *mut FramebufferInfoInner {
         // TODO: replace .offset() by .add()
-        unsafe {
-            (self.info.offset(1) as *mut FramebufferInfoInner).offset(u8::from(index) as isize)
-        }
+        unsafe { (self.info.add(1) as *mut FramebufferInfoInner).add(u8::from(index) as usize) }
     }
 
-    fn trigger_update(&self, active_fb: FramebufferIndex) {
+    fn trigger_update(&self, queued_fb: FramebufferIndex) {
         let header = self.header();
         let mut current = FramebufferInfoHeader(header.load(Ordering::Acquire));
         loop {
-            let updated = current.update_index(active_fb);
+            let updated = current.update_index(queued_fb);
 
             match header.compare_exchange_weak(
                 current.0,
@@ -245,25 +243,28 @@ impl FramebufferInfo {
                 unknown: 0,
             };
 
-            let next_index = self.load_index(Ordering::Acquire).swap();
+            let next_fb = self.load_index(Ordering::Acquire).swap();
             unsafe {
-                self.info_at(next_index).write(fb_info);
+                self.info_at(next_fb).write(fb_info);
             }
 
             core::sync::atomic::fence(Ordering::Release);
+            self.trigger_update(next_fb)
         }
-
-        self.trigger_update(active_fb)
     }
 }
 
 struct InterruptInfo {
-    event_buf: *const u32,
+    event_buf: *const u8,
 }
 
 impl InterruptInfo {
     fn header(&self) -> &AtomicU32 {
-        unsafe { &*(self.event_buf.offset(0) as *const AtomicU32) }
+        debug_assert!(
+            !self.event_buf.is_null(),
+            "InterruptInfo: null pointer to event buffer"
+        );
+        unsafe { &*self.event_buf.cast::<AtomicU32>() }
     }
 
     fn load_header(&self, order: Ordering) -> InterruptHeader {
@@ -288,19 +289,18 @@ impl InterruptInfo {
         }
     }
 
-    unsafe fn read_event(&self, header: &InterruptHeader) -> Option<InterruptEvent> {
-        let index = header.current_index;
-        let block_idx = usize::from(index / 4);
-        let part_idx = usize::from(index & 0b11);
-        let current_event_ptr = self.event_buf.offset(0x3 + block_idx as isize) as *const AtomicU32;
+    unsafe fn read_event(&self, index: u8) -> InterruptEvent {
+        let current_event_ptr = self.event_buf.add(0xC + usize::from(index)) as *const AtomicU8;
         let event_packed = (&*current_event_ptr).load(Ordering::SeqCst);
 
-        match InterruptEvent::try_from(event_packed.to_le_bytes()[3 - part_idx]) {
+        match InterruptEvent::try_from(event_packed) {
             Err(e) => {
-                warn!("GSP wrote an invalid interrupt event: 0x{:02x}", e.number);
-                None
+                panic!("GSP wrote an invalid interrupt event: 0x{:02x}", e.number);
             }
-            Ok(event) => Some(event),
+            Ok(event) => {
+                // debug!("GSP wrote event: {:?}", event);
+                event
+            }
         }
     }
 }
@@ -324,6 +324,7 @@ impl Sharedmem {
             self.shared_memory
                 .as_ptr()
                 .offset(self.gsp_module_thread_index as isize * 0x10)
+                .cast::<u8>()
         };
         InterruptInfo { event_buf }
     }
@@ -337,14 +338,19 @@ impl Sharedmem {
                 return None;
             }
 
-            let event = unsafe { info.read_event(&header) }?;
+            let event = unsafe { info.read_event(header.current_index) };
 
-            let acknowledged = InterruptHeader {
-                current_index: if header.current_index >= 0x34 {
+            let next_index = {
+                let next = header.current_index + 1;
+                if next >= 0x34 {
                     0
                 } else {
-                    header.current_index + 1
-                },
+                    next
+                }
+            };
+
+            let acknowledged = InterruptHeader {
+                current_index: next_index,
                 events_total: header.events_total - 1,
                 error: 0,
                 _unused: header._unused,
@@ -391,7 +397,7 @@ impl Sharedmem {
 #[derive(Debug)]
 pub struct Gpu {
     access: AccessRightsToken,
-    sharedmem: Sharedmem,
+    interrupt_relay_queue: Sharedmem,
 }
 
 impl Gpu {
@@ -399,18 +405,15 @@ impl Gpu {
         let service_handle = srv.get_service_handle("gsp::Gpu")?;
 
         const ACCESS_FLAGS: u8 = 0x00;
-        let mut access = Self::aquire_access(
-            service_handle,
-            PseudoHandle::ActiveProcess,
-            ACCESS_FLAGS,
-        )?;
+        let mut access =
+            Self::aquire_access(service_handle, PseudoHandle::ActiveProcess, ACCESS_FLAGS)?;
 
         const QUEUE_FLAGS: u8 = 0x01;
-        let gsp_relay_queue = Self::register_interrupt_relay_queue(&mut access, QUEUE_FLAGS)?;
+        let interrupt_relay_queue = Self::register_interrupt_relay_queue(&mut access, QUEUE_FLAGS)?;
 
         Ok(Self {
             access,
-            sharedmem: gsp_relay_queue,
+            interrupt_relay_queue,
         })
     }
 
@@ -419,7 +422,8 @@ impl Gpu {
         owner_process: Handle,
         flags: u8,
     ) -> Result<AccessRightsToken>
-        where Handle: AsHandle + 'h
+    where
+        Handle: AsHandle + 'h,
     {
         let _reply = IpcRequest::command(0x16)
             .parameter(u32::from(flags))
@@ -453,7 +457,10 @@ impl Gpu {
 
         match result_code.into_result() {
             Ok(()) => {}
-            Err(RESULT_NEED_HW_INIT) => Self::init_hardware(access)?,
+            Err(RESULT_NEED_HW_INIT) => {
+                info!("Initializing GPU hardware...");
+                Self::init_hardware(access)?
+            }
             Err(e) => return Err(e),
         };
 
@@ -482,7 +489,7 @@ impl Gpu {
             (0x1080, 0x12345678, None),
             (0x10C0, 0xFFFFFFF0, None),
             (0x10D0, 1, None),
-            // (0x1914, 1, None), // homebrew addition: make sure GPUREG_START_DRAW_FUNC0 starts off in configuration mode
+            (0x1914, 1, None), // homebrew addition: make sure GPUREG_START_DRAW_FUNC0 starts off in configuration mode
             // Top screen LCD configuration, see https://www.3dbrew.org/wiki/GPU/External_Registers#LCD_Source_Framebuffer_Setup
 
             // Top screen sync registers:
@@ -594,7 +601,7 @@ impl Gpu {
     }
 
     pub fn next_event(&mut self) -> Result<InterruptEventSet> {
-        self.sharedmem.wait_event()
+        self.interrupt_relay_queue.wait_event()
     }
 
     pub fn present_buffer(
@@ -606,7 +613,7 @@ impl Gpu {
         stride: u32,
         mode: u32,
     ) {
-        self.sharedmem
+        self.interrupt_relay_queue
             .present_buffer(screen, active_fb, fb0, fb1, stride, mode)
     }
 

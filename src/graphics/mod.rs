@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use core::alloc::AllocError;
 use core::ptr::NonNull;
 
 use crate::result::{ErrorCode, Result};
@@ -36,8 +37,7 @@ struct FramebufferFormat(u16);
 
 #[derive(Debug)]
 struct Framebuffer {
-    buffer: Option<NonNull<u8>>,
-    size: usize,
+    buffer: Option<NonNull<[u8]>>,
     format: FramebufferColorFormat,
 }
 
@@ -49,27 +49,25 @@ impl Framebuffer {
     fn new(
         dimensions: ScreenDimensions,
         format: FramebufferColorFormat,
-    ) -> core::result::Result<Self, ()> {
+    ) -> core::result::Result<Self, AllocError> {
         let size = usize::from(dimensions.width)
             * usize::from(dimensions.height)
             * format.bytes_per_pixel();
         debug!("Allocating new framebuffer (size = {:#0x})", size);
-        let buffer = vram::ALLOCATOR.allocate(Self::layout_for_size(size))?;
+        let mut buffer = vram::ALLOCATOR.allocate(Self::layout_for_size(size))?;
 
         debug!("New framebuffer: {:p}", buffer);
 
+        unsafe { buffer.as_mut() }.fill(0xff);
+
         let buffer = Some(buffer);
 
-        Ok(Self {
-            buffer,
-            size,
-            format,
-        })
+        Ok(Self { buffer, format })
     }
 
     pub(crate) fn as_ptr(&self) -> *const u8 {
         match self.buffer {
-            Some(buffer) => buffer.as_ptr(),
+            Some(buffer) => buffer.cast().as_ptr(),
             None => core::ptr::null(),
         }
     }
@@ -78,7 +76,9 @@ impl Framebuffer {
 impl Drop for Framebuffer {
     fn drop(&mut self) {
         if let Some(buffer) = self.buffer.take() {
-            unsafe { vram::ALLOCATOR.deallocate(buffer, Self::layout_for_size(self.size)) }
+            unsafe {
+                vram::ALLOCATOR.deallocate(buffer.cast(), Self::layout_for_size(buffer.len()))
+            }
         }
     }
 }
@@ -96,7 +96,7 @@ impl ScreenConfiguration {
     fn new(
         dimensions: ScreenDimensions,
         format: FramebufferColorFormat,
-    ) -> core::result::Result<Self, ()> {
+    ) -> core::result::Result<Self, AllocError> {
         let fb0 = Framebuffer::new(dimensions, format)?;
         let fb1 = Framebuffer::new(dimensions, format)?;
 
@@ -198,39 +198,44 @@ impl<'g> Grapics<'g> {
 }
 
 pub(crate) mod vram {
+    use core::alloc::{AllocError, Allocator, Layout};
     use core::ptr::NonNull;
 
-    use alloc::alloc::Layout;
-
-    use linked_list_allocator::LockedHeap;
+    use log::debug;
+    use talc::{ErrOnOom, Talc, Talck};
 
     pub(crate) struct VramAllocator {
-        inner: LockedHeap,
+        inner: Talck<spin::Mutex<()>, ErrOnOom>,
     }
 
     pub(crate) static ALLOCATOR: VramAllocator = VramAllocator {
-        inner: LockedHeap::empty(),
+        inner: Talc::new(ErrOnOom).lock(),
     };
 
-    pub(crate) fn init() {
-        ALLOCATOR.init()
+    pub(crate) unsafe fn init() -> Result<(), ()> {
+        let _span = ALLOCATOR.init()?;
+        Ok(())
     }
 
     impl VramAllocator {
-        pub(crate) fn init(&self) {
+        pub(crate) unsafe fn init(&self) -> Result<talc::Span, ()> {
+            debug!("Initializing VRAM...");
+
             const VRAM_START: usize = 0x1F00_0000;
             const VRAM_SIZE: usize = 0x60_0000;
-            unsafe { self.inner.lock().init(VRAM_START as *mut u8, VRAM_SIZE) }
+            const VRAM_SPAN: talc::Span =
+                talc::Span::from_base_size(VRAM_START as *mut u8, VRAM_SIZE);
+            unsafe { self.inner.talc().claim(VRAM_SPAN) }
         }
 
-        pub fn allocate(&self, layout: Layout) -> Result<NonNull<u8>, ()> {
-            let layout = layout.align_to(16).map_err(drop)?;
+        pub fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+            let layout = layout.align_to(16).map_err(|_| AllocError)?;
 
-            self.inner.lock().allocate_first_fit(layout)
+            self.inner.allocator().allocate(layout)
         }
 
         pub unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            self.inner.lock().deallocate(ptr, layout)
+            self.inner.allocator().deallocate(ptr, layout)
         }
     }
 }
