@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::os::{AsHandle, BorrowedHandle, OwnedHandle, RawHandle, SystemTick, CLOSED_HANDLE};
+use crate::early_debug;
+use crate::os::{AsHandle, BorrowedHandle, OwnedHandle, SystemTick, CLOSED_HANDLE};
 use crate::result::Result;
 use crate::svc::{self, Timeout};
 
@@ -18,7 +19,7 @@ pub enum ResetType {
     Pulse,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct Event {
     handle: OwnedHandle,
@@ -87,29 +88,64 @@ impl AtomicHandle {
         Self(AtomicU32::new(CLOSED_HANDLE))
     }
 
-    #[inline]
-    unsafe fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> BorrowedHandle {
-        let current: RawHandle = self.0.load(Ordering::Acquire);
+    fn get(&self) -> BorrowedHandle {
+        let raw_handle = self.0.load(Ordering::Acquire);
+        BorrowedHandle::new(raw_handle)
+    }
 
-        let raw_handle = if current == CLOSED_HANDLE {
-            let new_handle: RawHandle = init().leak();
-            match self.0.compare_exchange(
-                CLOSED_HANDLE,
-                new_handle,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(new_handle) => new_handle,
-                Err(old_handle) => {
-                    let _ = svc::close_handle(new_handle).ok();
-                    old_handle
-                }
+    #[cold]
+    fn init<'handle, F: FnOnce() -> OwnedHandle>(
+        &'handle self,
+        init: F,
+    ) -> BorrowedHandle<'handle> {
+        let new_handle: OwnedHandle = init();
+        debug_assert!(
+            new_handle.is_open(),
+            "AtomicHandle::init(): Initializer returned closed handle"
+        );
+
+        early_debug!(
+            "AtomicHandle::init(new_handle={:08x})",
+            new_handle.as_raw_handle()
+        );
+
+        let new_handle: BorrowedHandle<'handle> = match self.0.compare_exchange(
+            CLOSED_HANDLE,
+            new_handle.as_raw_handle(),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_closed_handle) => {
+                // Consume the new handle, do not run its destructor.
+                let raw_handle: u32 = new_handle.leak();
+                early_debug!(
+                    "AtomicHandle::init(new_handle={:08x}): Won the race, emplaced new_handle.",
+                    raw_handle
+                );
+                BorrowedHandle::new(raw_handle)
             }
-        } else {
-            current
+            Err(old_handle) => {
+                early_debug!(
+                    "AtomicHandle::init(new_handle={:08x}, old_handle={:08x}): Lost the race, already initialized",
+                    new_handle.as_raw_handle(),
+                    old_handle
+                );
+                drop(new_handle);
+                BorrowedHandle::new(old_handle)
+            }
         };
 
-        BorrowedHandle::new(raw_handle)
+        new_handle
+    }
+
+    fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> BorrowedHandle {
+        let handle = self.get();
+
+        if handle.is_closed() {
+            self.init(init)
+        } else {
+            handle
+        }
     }
 }
 
@@ -177,12 +213,11 @@ impl OsMutex {
     }
 
     fn get(&self) -> BorrowedHandle {
-        unsafe {
-            self.handle.get_or_init(move || {
-                const INITIALLY_LOCKED: bool = true;
-                svc::create_mutex(INITIALLY_LOCKED).expect("Failed to create new mutex")
-            })
-        }
+        self.handle.get_or_init(move || {
+            early_debug!("Initializing OsMutex");
+            const INITIALLY_LOCKED: bool = true;
+            svc::create_mutex(INITIALLY_LOCKED).expect("Failed to create new mutex")
+        })
     }
 }
 
