@@ -13,7 +13,7 @@ use crate::{
     result::Result,
 };
 
-use log::debug;
+use log::{debug, trace};
 
 use core::fmt;
 use core::mem::ManuallyDrop;
@@ -132,7 +132,7 @@ impl Hid {
     }
 
     pub fn last_keypad(&self) -> KeyPad {
-        debug!("tick (low): {:?}", self.sharedmem.current_update());
+        trace!("tick (low): {:?}", self.sharedmem.current_update());
         let index = self.sharedmem.current_index();
 
         let pad = self.sharedmem.pad_current(index);
