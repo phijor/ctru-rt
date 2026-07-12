@@ -147,10 +147,7 @@ impl Log for SvcDebugLog {
 pub fn init_log() -> Result<(), log::SetLoggerError> {
     use log::LevelFilter::{self, *};
 
-    #[cfg(debug_assertions)]
-    const FILTER: LevelFilter = Debug;
-    #[cfg(not(debug_assertions))]
-    const FILTER: LevelFilter = Info;
+    const FILTER: LevelFilter = if cfg!(debug_assertions) { Debug } else { Info };
 
     log::set_logger(&LOGGER).map(|()| log::set_max_level(FILTER))
 }
