@@ -14,7 +14,6 @@ use crate::os::{BorrowedHandle, OwnedHandle, RawHandle};
 use crate::result::{ResultCode, ResultValue};
 use crate::tls;
 
-use core::convert::TryFrom;
 use core::mem::MaybeUninit;
 use core::{fmt, ops::Range};
 
@@ -296,9 +295,13 @@ impl TranslateParameter for StaticBuffer<'_> {
             panic!("Static buffer target index must be in 0..16, not {}", index);
         }
 
-        let size: u32 = u16::try_from(self.source.len())
-            .expect("Static buffer length must fit 16 bits")
-            .into();
+        // The descriptor encodes the buffer size in *bytes* (max 0x3FFFF), not in
+        // elements.  See `IPC_Desc_StaticBuffer()` in libctru.
+        let size = core::mem::size_of_val(self.source);
+        if size > 0x3FFFF {
+            panic!("Static buffer size must fit 18 bits, not {}", size);
+        }
+        let size = size as u32;
 
         let header = (size << 14) | (index << 10) | TYPE_STATIC_BUFFER;
 
