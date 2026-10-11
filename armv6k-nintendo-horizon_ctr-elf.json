@@ -17,6 +17,7 @@
 
   "features": "+vfp2",
   "llvm-floatabi": "hard",
+  "has-thread-local": true,
 
   "relocation-model": "static",
   "panic-strategy": "abort",
