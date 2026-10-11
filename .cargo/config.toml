@@ -6,7 +6,7 @@ build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
 
 [target.armv6k-nintendo-horizon_ctr-elf]
-runner = "citra-qt"
+runner = "azahar"
 rustflags = [
     "-C", "link-arg=link.x",
 ]
