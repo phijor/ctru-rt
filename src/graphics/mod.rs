@@ -286,14 +286,14 @@ impl ScreenConfiguration {
 }
 
 #[derive(Debug)]
-pub struct Grapics<'g> {
+pub struct Graphics<'g> {
     gpu: &'g mut Gpu,
     stereoscopic: bool,
     top: ScreenConfiguration,
     bottom: ScreenConfiguration,
 }
 
-impl<'g> Grapics<'g> {
+impl<'g> Graphics<'g> {
     /// Initialize both screens as RGB8, with framebuffers in linear memory.
     ///
     /// Matches libctru's `gfxInitDefault`.
