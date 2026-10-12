@@ -666,6 +666,36 @@ impl Gpu {
             .present_buffer(screen, active_fb, fb0, fb1, stride, mode)
     }
 
+    /// Flush data at `[addr, addr + size)` from the CPU data cache to main memory.
+    ///
+    /// Use this to make writes done by the CPU visible to the GPU.  To ensure that
+    /// CPU writes do not get reordered after this call, issue a data sync barrier
+    /// before a call to this function ([`crate::sync::mem::data_sync_barrier`]).
+    ///
+    /// This IPC command instructs the GSP module to call [`crate::svc::flush_process_data_cache`]
+    /// for the current process.
+    pub fn flush_data_cache(&mut self, addr: *const u8, size: usize) -> Result<()> {
+        let _ = IpcRequest::command(0x08)
+            .parameters(&[addr as u32, size as u32])
+            .translate_parameter(PseudoHandle::ActiveProcess.as_handle())
+            .dispatch(&self.access)?;
+        Ok(())
+    }
+
+    /// Invalidate the CPU's data cache over `[addr, addr + size)`.
+    ///
+    /// Use this before reading memory to make GPU writes visible to the current process.
+    ///
+    /// The counterpart to [`Self::flush_data_cache`].  Instructs the GSP module to call
+    /// [`crate::svc::invalidate_data_cache`] for the current process.
+    pub fn invalidate_data_cache(&mut self, addr: *const u8, size: usize) -> Result<()> {
+        let _ = IpcRequest::command(0x09)
+            .parameters(&[addr as u32, size as u32])
+            .translate_parameter(PseudoHandle::ActiveProcess.as_handle())
+            .dispatch(&self.access)?;
+        Ok(())
+    }
+
     pub fn set_lcd_force_blank(&mut self, flags: u8) -> Result<()> {
         let _ = IpcRequest::command(0x0b)
             .parameter(flags as u32)

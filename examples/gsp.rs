@@ -12,8 +12,11 @@ use ctru_rt::{
     graphics::Grapics,
     ports::srv::Srv,
     result::Result,
-    services::{gsp::gpu::Gpu, hid::Hid},
-    svc::{self, Timeout},
+    services::{
+        gsp::gpu::{Gpu, Screen},
+        hid::Hid,
+    },
+    svc,
 };
 use log::{error, info};
 
@@ -35,21 +38,19 @@ fn run() -> Result<()> {
     let mut gfx = Grapics::init_default(&mut gpu)?;
     info!("Initialized graphics: {:#0x?}", gfx);
 
-    // gfx.fill_screen(0x80);
-
     let hid = Hid::init(&srv)?;
 
-    let mut color: u32 = 0;
+    let mut color: u8 = 0;
     info!("Press START to exit");
     while !hid.last_keypad().start() {
-        gfx.fill_screen(color as u8);
-        color = color.wrapping_mul(0x41C64E6D).wrapping_add(0x00006073);
-        color += 0x10;
+        // Draw into the off-screen buffer, publish it, then wait for the scanout to pick it
+        // up.  `swap_buffers` flushes the data cache, so the GPU sees what we just wrote.
+        gfx.fill_screen(Screen::Top, color);
+        gfx.fill_screen(Screen::Bottom, 0xFF - color);
+        gfx.swap_buffers()?;
+        gfx.wait_vblank0()?;
 
-        info!("Waiting for VBLANK0...");
-        gfx.wait_vblank0().ok();
-
-        svc::sleep_thread(Timeout::from_seconds(1));
+        color = color.wrapping_add(0x04);
     }
 
     info!("Exiting...");

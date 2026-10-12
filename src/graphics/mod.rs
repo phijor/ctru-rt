@@ -56,22 +56,43 @@ impl Framebuffer {
             * usize::from(dimensions.height)
             * format.bytes_per_pixel();
         debug!("Allocating new framebuffer (size = {:#0x})", size);
-        let mut buffer = vram::ALLOCATOR.allocate(Self::layout_for_size(size))?;
+        let buffer = vram::ALLOCATOR.allocate(Self::layout_for_size(size))?;
 
         debug!("New framebuffer: {:p}", buffer);
 
-        unsafe { buffer.as_mut() }.fill(0xff);
-        crate::sync::mem::data_sync_barrier();
+        let mut fb = Self {
+            buffer: Some(buffer),
+            format,
+        };
+        fb.fill(0xff);
 
-        let buffer = Some(buffer);
-
-        Ok(Self { buffer, format })
+        Ok(fb)
     }
 
     pub(crate) fn as_ptr(&self) -> *const u8 {
         match self.buffer {
             Some(buffer) => buffer.cast().as_ptr(),
             None => core::ptr::null(),
+        }
+    }
+
+    /// Write this framebuffer's dirty cache lines back to memory.
+    ///
+    /// Required before the GPU scans the buffer out: the writes performed by
+    /// [`Self::fill`] and friends only reach the data cache, and a data synchronization
+    /// barrier orders them without evicting them.
+    fn flush(&self, gpu: &mut Gpu) -> Result<()> {
+        match self.buffer {
+            Some(buffer) => gpu.flush_data_cache(buffer.cast().as_ptr(), buffer.len()),
+            None => Ok(()),
+        }
+    }
+
+    fn fill(&mut self, value: u8) {
+        if let Some(mut buffer) = self.buffer {
+            // SAFETY: `buffer` points at an allocation of `buffer.len()` bytes owned by `self`.
+            unsafe { buffer.as_mut() }.fill(value);
+            crate::sync::mem::data_sync_barrier();
         }
     }
 }
@@ -126,8 +147,12 @@ impl ScreenConfiguration {
         mode
     }
 
-    fn present_buffer(&self, screen: Screen, gpu: &mut Gpu) {
+    fn present_buffer(&self, screen: Screen, gpu: &mut Gpu) -> Result<()> {
         let fb = self.active_buffer();
+
+        // Clean our writes out of the data cache before the GPU reads the buffer.
+        fb.flush(gpu)?;
+
         gpu.present_buffer(
             screen,
             self.active_fb,
@@ -135,22 +160,32 @@ impl ScreenConfiguration {
             fb.as_ptr(), // not a typo, only 2D mode for now
             self.stride(),
             self.mode(screen),
-        )
+        );
+
+        Ok(())
     }
 
     fn fill_buffer(&mut self, index: FramebufferIndex, value: u8) {
-        if let Some(mut fb) = self.buffer_at(index).buffer {
-            unsafe {
-                fb.as_mut().fill(value);
-                crate::sync::mem::data_sync_barrier();
-            };
-        }
+        self.buffer_at_mut(index).fill(value)
+    }
+
+    /// Fill the buffer that will be shown after the next [`Self::swap_buffers`].
+    fn fill_inactive(&mut self, value: u8) {
+        let inactive = self.active_fb.swap();
+        self.fill_buffer(inactive, value)
     }
 
     fn buffer_at(&self, index: FramebufferIndex) -> &Framebuffer {
         match index {
             FramebufferIndex::First => &self.fb0,
             FramebufferIndex::Second => &self.fb1,
+        }
+    }
+
+    fn buffer_at_mut(&mut self, index: FramebufferIndex) -> &mut Framebuffer {
+        match index {
+            FramebufferIndex::First => &mut self.fb0,
+            FramebufferIndex::Second => &mut self.fb1,
         }
     }
 
@@ -202,8 +237,8 @@ impl<'g> Grapics<'g> {
         let bottom = ScreenConfiguration::new(Bottom.dimensions(), format_bottom)
             .map_err(|_| ERR_SCREEN_ALLOC)?;
 
-        top.present_buffer(Top, gpu);
-        bottom.present_buffer(Bottom, gpu);
+        top.present_buffer(Top, gpu)?;
+        bottom.present_buffer(Bottom, gpu)?;
 
         while !gpu.next_event()?.contains(InterruptEvent::VBlank0) {}
 
@@ -222,19 +257,31 @@ impl<'g> Grapics<'g> {
         self.gpu
     }
 
-    pub fn fill_screen(&mut self, value: u8) {
-        // self.top.fill_buffer(FramebufferIndex::First, value);
-        // self.top.fill_buffer(FramebufferIndex::Second, value);
-        self.bottom.fill_buffer(FramebufferIndex::First, value);
-        self.bottom
-            .fill_buffer(FramebufferIndex::Second, 0xFF - value);
-        // if let Some(mut fb) = self.bottom.buffer_at(FramebufferIndex::First).buffer {
-        //     unsafe {
-        //         fb.as_mut().fill(value);
-        //         crate::sync::mem::data_sync_barrier();
-        //     }
-        // }
-        // self.top.swap_buffers()
+    fn screen_configuration_mut(&mut self, screen: Screen) -> &mut ScreenConfiguration {
+        match screen {
+            Screen::Top => &mut self.top,
+            Screen::Bottom => &mut self.bottom,
+        }
+    }
+
+    /// Fill the off-screen buffer of the selected screen.
+    ///
+    /// Nothing becomes visible until [`Self::swap_buffers`] is called.
+    pub fn fill_screen(&mut self, screen: Screen, value: u8) {
+        self.screen_configuration_mut(screen).fill_inactive(value);
+    }
+
+    /// Make the off-screen buffer of both screens the visible one.
+    ///
+    /// Each buffer is flushed from the data cache before it is handed to the GPU.
+    pub fn swap_buffers(&mut self) -> Result<()> {
+        self.top.swap_buffers();
+        self.bottom.swap_buffers();
+
+        self.top.present_buffer(Screen::Top, self.gpu)?;
+        self.bottom.present_buffer(Screen::Bottom, self.gpu)?;
+
+        Ok(())
     }
 
     pub fn wait_vblank0(&mut self) -> Result<()> {
