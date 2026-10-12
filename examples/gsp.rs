@@ -9,7 +9,7 @@ use core::{fmt::Write, panic::PanicInfo};
 
 use ctru_rt::{
     entry,
-    graphics::Grapics,
+    graphics::{FramebufferAllocator, Grapics},
     ports::srv::Srv,
     result::Result,
     services::{
@@ -28,6 +28,8 @@ fn panic_handler(info: &PanicInfo) -> ! {
     svc::user_break(UserBreakReason::Panic)
 }
 
+const FRAMEBUFFER_ALLOCATOR: FramebufferAllocator = FramebufferAllocator::Linear;
+
 fn run() -> Result<()> {
     let srv = Srv::init()?;
     info!("Initialized `srv`: {:#0x?}", srv);
@@ -35,7 +37,8 @@ fn run() -> Result<()> {
     let mut gpu = Gpu::init(&srv)?;
     info!("Initialized `gsp::Gpu`: {:#0x?}", gpu);
 
-    let mut gfx = Grapics::init_default(&mut gpu)?;
+    use ctru_rt::graphics::FramebufferColorFormat::RGB8;
+    let mut gfx = Grapics::init(&mut gpu, RGB8, RGB8, FRAMEBUFFER_ALLOCATOR)?;
     info!("Initialized graphics: {:#0x?}", gfx);
 
     let hid = Hid::init(&srv)?;

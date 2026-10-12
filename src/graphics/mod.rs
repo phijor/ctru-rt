@@ -5,6 +5,7 @@
 use core::alloc::AllocError;
 use core::ptr::NonNull;
 
+use crate::heap::linear;
 use crate::result::{ErrorCode, Result};
 use crate::services::gsp::gpu::{FramebufferIndex, Gpu, InterruptEvent, Screen, ScreenDimensions};
 
@@ -37,32 +38,98 @@ impl FramebufferColorFormat {
 #[derive(Debug)]
 struct FramebufferFormat(u16);
 
+/// A memory allocator for framebuffers
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FramebufferAllocator {
+    /// Dedicated video memory.
+    ///
+    /// Forwards to [`vram`].
+    Vram,
+    /// Linear (physically contiguous) main memory.
+    ///
+    /// Forwards to [`linear`].
+    Linear,
+}
+
+impl FramebufferAllocator {
+    fn allocate(&self, layout: Layout) -> core::result::Result<NonNull<[u8]>, AllocError> {
+        match self {
+            Self::Vram => vram::ALLOCATOR.allocate(layout),
+            Self::Linear => linear::ALLOCATOR.allocate(layout),
+        }
+    }
+
+    /// # Safety
+    ///
+    /// `ptr` and `layout` must come from a matching [`Self::allocate`] on the same variant.
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        match self {
+            Self::Vram => unsafe { vram::ALLOCATOR.deallocate(ptr, layout) },
+            Self::Linear => unsafe { linear::ALLOCATOR.deallocate(ptr, layout) },
+        }
+    }
+
+    /// Alignment framebuffers in this region have to be allocated with.
+    const fn alignment(&self) -> usize {
+        match self {
+            Self::Vram => vram::ALIGNMENT,
+            Self::Linear => linear::ALIGNMENT,
+        }
+    }
+
+    /// Bits 8..=9 of the framebuffer mode word, telling GSP where the buffer lives.
+    const fn mode_bits(&self) -> u32 {
+        match self {
+            Self::Vram => 0b11 << 8,
+            Self::Linear => 0b01 << 8,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Framebuffer {
     buffer: Option<NonNull<[u8]>>,
+    /// Layout [`Self::buffer`] was allocated with.
+    ///
+    /// Kept so that [`Drop`] frees the buffer with exactly the layout it was allocated with.
+    /// The allocator may hand back a slice longer than requested, so the length of `buffer` is
+    /// not a safe substitute.
+    layout: Layout,
     format: FramebufferColorFormat,
+    allocator: FramebufferAllocator,
 }
 
 impl Framebuffer {
-    fn layout_for_size(size: usize) -> Layout {
-        Layout::from_size_align(size, 4).unwrap()
+    /// Layout a framebuffer of `size` bytes in `region` is allocated with.
+    ///
+    /// The alignment the region requires is baked in here rather than inside the allocators, so
+    /// that [`Drop`] can free a buffer with exactly the layout it was allocated with.
+    fn layout_for_size(size: usize, region: FramebufferAllocator) -> Layout {
+        Layout::from_size_align(size, region.alignment()).unwrap()
     }
 
     fn new(
         dimensions: ScreenDimensions,
         format: FramebufferColorFormat,
+        allocator: FramebufferAllocator,
     ) -> core::result::Result<Self, AllocError> {
         let size = usize::from(dimensions.width)
             * usize::from(dimensions.height)
             * format.bytes_per_pixel();
-        debug!("Allocating new framebuffer (size = {:#0x})", size);
-        let buffer = vram::ALLOCATOR.allocate(Self::layout_for_size(size))?;
+        debug!(
+            "Allocating new framebuffer (size = {:#0x}, allocator = {:?})",
+            size, allocator
+        );
+        let layout = Self::layout_for_size(size, allocator);
+        let buffer = allocator.allocate(layout)?;
 
         debug!("New framebuffer: {:p}", buffer);
 
         let mut fb = Self {
             buffer: Some(buffer),
+            layout,
             format,
+            allocator,
         };
         fb.fill(0xff);
 
@@ -78,16 +145,30 @@ impl Framebuffer {
 
     /// Write this framebuffer's dirty cache lines back to memory.
     ///
-    /// Required before the GPU scans the buffer out: the writes performed by
-    /// [`Self::fill`] and friends only reach the data cache, and a data synchronization
-    /// barrier orders them without evicting them.
+    /// If the framebuffer is located in linear memory ([`FramebufferAllocator::Linear`]), issues a
+    /// [`Gpu::flush_data_cache`] IPC command to `GSP:GPU` to make framebuffer changes visible to
+    /// the GPU.
+    ///
+    /// For framebuffers in VRAM ([`FramebufferAllocator::Vram`]), this is a no-op: the IPC command
+    /// refuses to flush data caches outside of linear memory.
+    ///
+    /// Calls to this method must be preceeded by a data synchronization barrier
+    /// ([`crate::sync::mem::data_sync_barrier`]) so that writes to the framebuffer are not
+    /// reordered after this call.
     fn flush(&self, gpu: &mut Gpu) -> Result<()> {
+        if let FramebufferAllocator::Vram = self.allocator {
+            return Ok(());
+        }
+
         match self.buffer {
             Some(buffer) => gpu.flush_data_cache(buffer.cast().as_ptr(), buffer.len()),
             None => Ok(()),
         }
     }
 
+    /// Fill the framebuffer with a fixed byte value
+    ///
+    /// Issues a data synchronization barrier to order writes to the buffer.
     fn fill(&mut self, value: u8) {
         if let Some(mut buffer) = self.buffer {
             // SAFETY: `buffer` points at an allocation of `buffer.len()` bytes owned by `self`.
@@ -100,9 +181,8 @@ impl Framebuffer {
 impl Drop for Framebuffer {
     fn drop(&mut self) {
         if let Some(buffer) = self.buffer.take() {
-            unsafe {
-                vram::ALLOCATOR.deallocate(buffer.cast(), Self::layout_for_size(buffer.len()))
-            }
+            // SAFETY: `buffer` was allocated from `self.allocator` with `self.layout`.
+            unsafe { self.allocator.deallocate(buffer.cast(), self.layout) }
         }
     }
 }
@@ -111,6 +191,7 @@ impl Drop for Framebuffer {
 struct ScreenConfiguration {
     format: FramebufferColorFormat,
     dimensions: ScreenDimensions,
+    allocator: FramebufferAllocator,
     fb0: Framebuffer,
     fb1: Framebuffer,
     active_fb: FramebufferIndex,
@@ -120,13 +201,15 @@ impl ScreenConfiguration {
     fn new(
         dimensions: ScreenDimensions,
         format: FramebufferColorFormat,
+        allocator: FramebufferAllocator,
     ) -> core::result::Result<Self, AllocError> {
-        let fb0 = Framebuffer::new(dimensions, format)?;
-        let fb1 = Framebuffer::new(dimensions, format)?;
+        let fb0 = Framebuffer::new(dimensions, format, allocator)?;
+        let fb1 = Framebuffer::new(dimensions, format, allocator)?;
 
         Ok(Self {
             format,
             dimensions,
+            allocator,
             fb0,
             fb1,
             active_fb: FramebufferIndex::First,
@@ -143,7 +226,7 @@ impl ScreenConfiguration {
             mode |= 1 << 6; // 2D mode
         }
 
-        mode |= 0b11_0000_0000; // linear mem buffers
+        mode |= self.allocator.mode_bits();
         mode
     }
 
@@ -211,15 +294,19 @@ pub struct Grapics<'g> {
 }
 
 impl<'g> Grapics<'g> {
+    /// Initialize both screens as RGB8, with framebuffers in linear memory.
+    ///
+    /// Matches libctru's `gfxInitDefault`.
     pub fn init_default(gpu: &'g mut Gpu) -> Result<Self> {
         use FramebufferColorFormat::RGB8;
-        Self::init(gpu, RGB8, RGB8)
+        Self::init(gpu, RGB8, RGB8, FramebufferAllocator::Linear)
     }
 
     pub fn init(
         gpu: &'g mut Gpu,
         format_top: FramebufferColorFormat,
         format_bottom: FramebufferColorFormat,
+        allocator: FramebufferAllocator,
     ) -> Result<Self> {
         use crate::result::{CommonDescription, Level, Module, Summary};
         use Screen::{Bottom, Top};
@@ -230,11 +317,13 @@ impl<'g> Grapics<'g> {
             CommonDescription::InvalidResultValue as u32,
         );
 
+        info!("Allocating framebuffers from {:?} memory", allocator);
+
         debug!("Configuring top screen framebuffer...");
-        let top =
-            ScreenConfiguration::new(Top.dimensions(), format_top).map_err(|_| ERR_SCREEN_ALLOC)?;
+        let top = ScreenConfiguration::new(Top.dimensions(), format_top, allocator)
+            .map_err(|_| ERR_SCREEN_ALLOC)?;
         debug!("Configuring bottom screen framebuffer...");
-        let bottom = ScreenConfiguration::new(Bottom.dimensions(), format_bottom)
+        let bottom = ScreenConfiguration::new(Bottom.dimensions(), format_bottom, allocator)
             .map_err(|_| ERR_SCREEN_ALLOC)?;
 
         top.present_buffer(Top, gpu)?;
@@ -291,6 +380,7 @@ impl<'g> Grapics<'g> {
     }
 }
 
+/// Allocator for VRAM memory.
 pub(crate) mod vram {
     use core::alloc::{AllocError, Allocator, Layout};
     use core::ptr::NonNull;

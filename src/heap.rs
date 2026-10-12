@@ -28,6 +28,59 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 // pub(crate) static ALLOCATOR: Talck<OsMutex, ErrOnOom> = talc::Talc::new(ErrOnOom).lock();
 pub(crate) static ALLOCATOR: Talck<spin::Mutex<()>, ErrOnOom> = talc::Talc::new(ErrOnOom).lock();
 
+/// Allocator for *linear* memory.
+///
+/// Linear memory is physically contiguous and sits at a fixed virtual-to-physical offset.
+/// Other bus masters (in particular the GPU) can address allocations inside of linear memory
+/// without having to do any address translation.
+///
+/// Use GSP commands [`flush_data_cache`][flush_data_cache] and
+/// [`invalidate_data_cache`][invalidate_data_cache] to make modifications by the CPU and GPU
+/// (respectively) visible.
+///
+/// [invalidate_data_cache]: crate::services::gsp::gpu::Gpu::invalidate_data_cache
+/// [flush_data_cache]: crate::services::gsp::gpu::Gpu::flush_data_cache
+pub mod linear {
+    use core::alloc::{AllocError, Allocator, Layout};
+    use core::ptr::NonNull;
+
+    use talc::{ErrOnOom, Talc, Talck};
+
+    /// Recommended alignment for allocations in linear memory.
+    ///
+    /// Callers are expected to build their [`Layout`] with this alignment.
+    /// The allocator uses a layout as-is, rather than than widening it.
+    pub const ALIGNMENT: usize = 0x80;
+
+    pub struct LinearAllocator {
+        inner: Talck<spin::Mutex<()>, ErrOnOom>,
+    }
+
+    pub static ALLOCATOR: LinearAllocator = LinearAllocator {
+        inner: Talc::new(ErrOnOom).lock(),
+    };
+
+    impl LinearAllocator {
+        /// # Safety
+        ///
+        /// `span` must cover memory that is mapped, writable, and owned by this allocator.
+        pub(super) unsafe fn claim(&self, span: talc::Span) -> Result<talc::Span, ()> {
+            unsafe { self.inner.talc().claim(span) }
+        }
+
+        pub fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+            self.inner.allocator().allocate(layout)
+        }
+
+        /// # Safety
+        ///
+        /// `ptr` and `layout` must come from a matching [`Self::allocate`] call.
+        pub unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+            unsafe { self.inner.allocator().deallocate(ptr, layout) }
+        }
+    }
+}
+
 const HEAP_START: usize = 0x0800_0000;
 const HEAP_SPLIT_CAP: usize = 24 << 20; // 24 MiB
 const LINEAR_HEAP_SPLIT_CAP: usize = 32 << 20; // 32 MiB
@@ -159,10 +212,24 @@ pub(crate) fn init() -> Result<()> {
             )?
         };
 
+        let linear_span = Span::from_base_size(linear_heap_start as *mut u8, linear_heap_size);
+
+        let usable_span = unsafe {
+            use crate::result::*;
+            const ERROR: ErrorCode = ErrorCode::new(
+                Level::Fatal,
+                Summary::InvalidState,
+                Module::Application,
+                CommonDescription::InvalidSize as u32,
+            );
+            linear::ALLOCATOR.claim(linear_span).map_err(|_| ERROR)?
+        };
+
         early_debug!(
-            "Initialized linear heap at {:p}, size = 0x{:08x}",
+            "Initialized linear heap at {:p}, size = 0x{:08x}, usable = {}",
             linear_heap_start as *const (),
-            linear_heap_size
+            linear_heap_size,
+            usable_span
         );
     }
 
