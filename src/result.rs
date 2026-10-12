@@ -389,3 +389,27 @@ pub const ERROR_NOT_AUTHORIZED: ErrorCode = ErrorCode::new(
     Module::Application,
     CommonDescription::NotAuthorized as u32,
 );
+
+/// A null pointer was passed where a non-null pointer is required (`0xD8E007F6`).
+pub const ERROR_INVALID_POINTER: ErrorCode = ErrorCode::new(
+    Level::Permanent,
+    Summary::InvalidArgument,
+    Module::Kernel,
+    CommonDescription::InvalidPointer as u32,
+);
+
+/// Address outside of permitted range (`0xE0E01BF5`).
+pub const ERROR_INVALID_ADDRESS: ErrorCode = ErrorCode::new(
+    Level::Usage,
+    Summary::InvalidArgument,
+    Module::Os,
+    CommonDescription::InvalidAddress as u32,
+);
+
+/// Handle missing or not of the expected kind (`0xD9001BF7`).
+pub const ERROR_INVALID_HANDLE: ErrorCode = ErrorCode::new(
+    Level::Permanent,
+    Summary::WrongArgument,
+    Module::Os,
+    CommonDescription::InvalidHandle as u32,
+);

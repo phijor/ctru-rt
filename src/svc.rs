@@ -363,6 +363,86 @@ pub fn output_debug_string(message: &str) {
     output_debug_bytes(message.as_bytes())
 }
 
+/// Invalidate the CPU data cache at `[addr, addr + size)` for a given process.
+///
+/// Discards cache lines so that subsequent CPU reads go to memory.  This makes the given range of
+/// main memory visible to the process.  Use it before reading memory that another bus master (e.g.
+/// GPU, DSP, ARM9) has written.
+///
+/// The kernel writes back (see [`clean_process_data_cache`]) dirty cache lines before discarding
+/// them depending on `size`. This is unlike an ARM [_invalidate_ cache operation][arm-trm].
+/// Do not use this to discard CPU writes.
+///
+/// # Errors
+///
+/// * [`crate::result::ERROR_INVALID_POINTER`]: `addr` is null.
+/// * [`crate::result::ERROR_INVALID_ADDRESS`]: `addr >= 0x4000_0000`, or `addr + size` exceeds that bound.
+/// * [`crate::result::ERROR_INVALID_HANDLE`]:  `process` does not refer to a process.
+///
+/// # References
+///
+/// `KPageTable::InvalidateDataCacheRange` in [TuxSH's Kernel11 decompilation][tuxsh-kernel].
+///
+/// Section 3.4.18 "c7, Cache Operations Register" (page 3-45) of the [ARM11 MPCore Processor
+/// Technical Reference Manual][arm-trm] (ARM DDI 0360F).
+///
+/// [arm-trm]: https://support.arm.com/documentation/ddi0360/f/control-coprocessor-cp15/register-descriptions/c7--cache-operations-register?lang=en
+/// [tuxsh-kernel]: https://gist.github.com/TuxSH/f1f270710ed84576823fd1da348acb38
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn invalidate_process_data_cache(
+    process: BorrowedHandle,
+    addr: *mut u8,
+    size: usize,
+) -> Result<()> {
+    unsafe { svc!(0x52: (process, addr, size)) }
+}
+
+/// Clean (write back) the CPU data cache at `[addr, addr + size)` for a given process.
+///
+/// Use this to publish writes made by a process to another bus master (e.g. GPU, DSP, ARM9) while
+/// letting it continue to read the same data itself.  Dirty cache lines are written out to main
+/// memory but stay valid, so subsequent CPU reads by this process still hit the cache.
+///
+/// # Errors
+///
+/// See [`invalidate_process_data_cache`].
+///
+/// # References
+///
+/// This is called `StoreProcessDataCache` in the [3DBrew docs](https://www.3dbrew.org/wiki/SVC),
+/// but corresponds to an ARM [_clean_ operation][arm-trm].
+///
+/// [arm-trm]: https://support.arm.com/documentation/ddi0360/f/control-coprocessor-cp15/register-descriptions/c7--cache-operations-register?lang=en
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn clean_process_data_cache(
+    process: BorrowedHandle,
+    addr: *const u8,
+    size: usize,
+) -> Result<()> {
+    unsafe { svc!(0x53: (process, addr, size)) }
+}
+
+/// Flush (clean and invalidate) CPU data cache at `[addr, addr + size)` for a given process.
+///
+/// Use this to make modifications within this memory range performed by this process visible in
+/// main memory.
+///
+/// This is a combination of [`clean_process_data_cache`] and [`invalidate_process_data_cache`]:
+/// Dirty cache lines are written back to main memory *and* dropped from the cache, so this both
+/// publishes writes made by this process and forces the next read to come from memory.
+///
+/// # Errors
+///
+/// See [`invalidate_process_data_cache`].
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub fn flush_process_data_cache(
+    process: BorrowedHandle,
+    addr: *const u8,
+    size: usize,
+) -> Result<()> {
+    unsafe { svc!(0x54: (process, addr, size)) }
+}
+
 pub fn stop_point() {
     unsafe { asm!("svc 0xff") }
 }
