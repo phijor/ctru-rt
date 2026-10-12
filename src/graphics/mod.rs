@@ -298,6 +298,9 @@ pub(crate) mod vram {
     use log::debug;
     use talc::{ErrOnOom, Talc, Talck};
 
+    /// Alignment guaranteed for every allocation, matching libctru's `vramAlloc`.
+    const ALIGNMENT: usize = 0x80;
+
     pub(crate) struct VramAllocator {
         inner: Talck<spin::Mutex<()>, ErrOnOom>,
     }
@@ -323,13 +326,21 @@ pub(crate) mod vram {
         }
 
         pub fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-            let layout = layout.align_to(16).map_err(|_| AllocError)?;
+            let layout = layout.align_to(ALIGNMENT).map_err(|_| AllocError)?;
 
             self.inner.allocator().allocate(layout)
         }
 
+        /// # Safety
+        ///
+        /// `ptr` and `layout` must come from a matching [`Self::allocate`] call.
         pub unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            self.inner.allocator().deallocate(ptr, layout)
+            // Deallocate with the same layout `allocate` widened it to.
+            let Ok(layout) = layout.align_to(ALIGNMENT) else {
+                return;
+            };
+
+            unsafe { self.inner.allocator().deallocate(ptr, layout) }
         }
     }
 }
