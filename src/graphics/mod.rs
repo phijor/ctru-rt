@@ -145,17 +145,20 @@ impl Framebuffer {
 
     /// Write this framebuffer's dirty cache lines back to memory.
     ///
-    /// If the framebuffer is located in linear memory ([`FramebufferAllocator::Linear`]), issues a
-    /// [`Gpu::flush_data_cache`] IPC command to `GSP:GPU` to make framebuffer changes visible to
-    /// the GPU.
+    /// Issues the data synchronization barrier ([`sync::mem::data_sync_barrier`]) that orders all
+    /// preceeding writes to the framebuffer before the cache maintenance operation.
     ///
-    /// For framebuffers in VRAM ([`FramebufferAllocator::Vram`]), this is a no-op: the IPC command
-    /// refuses to flush data caches outside of linear memory.
+    /// If the framebuffer is located in linear memory ([`FramebufferAllocator::Linear`]), it then
+    /// issues a [`Gpu::flush_data_cache`] IPC command to `GSP:GPU` to make framebuffer changes
+    /// visible to the GPU.
     ///
-    /// Calls to this method must be preceeded by a data synchronization barrier
-    /// ([`crate::sync::mem::data_sync_barrier`]) so that writes to the framebuffer are not
-    /// reordered after this call.
+    /// For framebuffers in VRAM ([`FramebufferAllocator::Vram`]), no IPC command is issued: the
+    /// `GSP` service refuses to flush data caches outside of linear memory.  The data
+    /// synchronization barrier is still needed there, since VRAM is write-combined and pixel writes
+    /// may still sit in the write buffer.
     fn flush(&self, gpu: &mut Gpu) -> Result<()> {
+        crate::sync::mem::data_sync_barrier();
+
         if let FramebufferAllocator::Vram = self.allocator {
             return Ok(());
         }
@@ -166,6 +169,7 @@ impl Framebuffer {
         }
     }
 
+    /// Run `f` on this framebuffer's memory, if it is allocated.
     #[inline]
     fn with_mut<F>(&mut self, f: F)
     where
@@ -173,13 +177,10 @@ impl Framebuffer {
     {
         if let Some(mut buffer) = self.buffer {
             f(&mut buffer);
-            crate::sync::mem::data_sync_barrier();
         }
     }
 
     /// Fill the framebuffer with a fixed byte value
-    ///
-    /// Issues a data synchronization barrier to order writes to the buffer.
     fn fill(&mut self, value: u8) {
         self.with_mut(|buffer| {
             // SAFETY: `buffer` points at an allocation of `buffer.len()` bytes owned by `self`.
