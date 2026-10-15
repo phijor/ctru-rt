@@ -48,7 +48,7 @@ fn run() -> Result<()> {
     while !hid.last_keypad().start() {
         // Draw into the off-screen buffer, publish it, then wait for the scanout to pick it
         // up.  `swap_buffers` flushes the data cache, so the GPU sees what we just wrote.
-        gfx.fill_screen(Screen::Top, color);
+        gfx.fill_screen_rgb(Screen::Top, [color, color + 0x50, color + 0xa0]);
         gfx.fill_screen(Screen::Bottom, 0xFF - color);
         gfx.swap_buffers()?;
         gfx.wait_vblank0()?;

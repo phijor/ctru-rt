@@ -166,15 +166,25 @@ impl Framebuffer {
         }
     }
 
+    #[inline]
+    fn with_mut<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut NonNull<[u8]>),
+    {
+        if let Some(mut buffer) = self.buffer {
+            f(&mut buffer);
+            crate::sync::mem::data_sync_barrier();
+        }
+    }
+
     /// Fill the framebuffer with a fixed byte value
     ///
     /// Issues a data synchronization barrier to order writes to the buffer.
     fn fill(&mut self, value: u8) {
-        if let Some(mut buffer) = self.buffer {
+        self.with_mut(|buffer| {
             // SAFETY: `buffer` points at an allocation of `buffer.len()` bytes owned by `self`.
             unsafe { buffer.as_mut() }.fill(value);
-            crate::sync::mem::data_sync_barrier();
-        }
+        });
     }
 }
 
@@ -276,8 +286,8 @@ impl ScreenConfiguration {
         self.buffer_at(self.active_fb)
     }
 
-    fn inactive_buffer(&self) -> &Framebuffer {
-        self.buffer_at(self.active_fb.swap())
+    fn inactive_buffer_mut(&mut self) -> &mut Framebuffer {
+        self.buffer_at_mut(self.active_fb.swap())
     }
 
     fn swap_buffers(&mut self) {
@@ -358,6 +368,16 @@ impl<'g> Graphics<'g> {
     /// Nothing becomes visible until [`Self::swap_buffers`] is called.
     pub fn fill_screen(&mut self, screen: Screen, value: u8) {
         self.screen_configuration_mut(screen).fill_inactive(value);
+    }
+
+    #[inline]
+    pub fn fill_screen_rgb(&mut self, screen: Screen, pixel: [u8; 3]) {
+        self.screen_configuration_mut(screen)
+            .inactive_buffer_mut()
+            .with_mut(|buffer| unsafe {
+                let (chunks, _) = buffer.as_mut().as_chunks_mut::<3>();
+                chunks.fill(pixel);
+            });
     }
 
     /// Make the off-screen buffer of both screens the visible one.
