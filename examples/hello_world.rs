@@ -26,7 +26,7 @@ fn panic_handler(info: &PanicInfo) -> ! {
 
 #[entry]
 fn main() {
-    let _ = init_log().expect("Failed to initialize logger");
+    init_log().expect("Failed to initialize logger");
 
     let app_id = env::app_id();
     let app_mem_used = os::MemoryRegion::Application
@@ -40,7 +40,7 @@ fn main() {
     let rc = ResultCode::from(0x2a07);
     info!("Some result code: {:?}", rc);
 
-    let _ = ctru_rt::svc::sleep_thread(Duration::from_secs(2).into());
+    ctru_rt::svc::sleep_thread(Duration::from_secs(2).into());
 
     info!("Bye-bye!");
 }

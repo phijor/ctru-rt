@@ -202,7 +202,7 @@ unsafe fn write_str_param(s: &str) -> ((u32, u32), u32) {
 }
 
 impl AsHandle for Srv {
-    fn as_handle(&self) -> crate::os::BorrowedHandle {
+    fn as_handle(&self) -> crate::os::BorrowedHandle<'_> {
         self.handle.as_handle()
     }
 }

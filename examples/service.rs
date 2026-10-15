@@ -20,8 +20,7 @@ use ctru_rt::{
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    let mut log = SvcDebugLog::default();
-    let _ = writeln!(log, "[PANIC] {}", info);
+    let _ = writeln!(SvcDebugLog, "[PANIC] {}", info);
 
     ctru_rt::svc::user_break(UserBreakReason::Panic)
 }
@@ -29,7 +28,7 @@ fn panic_handler(info: &PanicInfo) -> ! {
 fn run() -> Result<()> {
     let srv = Srv::init()?;
 
-    let _ = info!("Initialized srv: {:#0x?}", srv);
+    info!("Initialized srv: {:#0x?}", srv);
 
     // let buffer = PageAlignedBuffer::allocate(0x4000).map_err(|e| match e {
     //     PageAlignErr::Alloc => {
@@ -63,7 +62,7 @@ fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
-            let _ = error!("Failed to run: {:?}", e);
+            error!("Failed to run: {:?}", e);
         }
     }
 }

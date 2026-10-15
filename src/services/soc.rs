@@ -131,14 +131,10 @@ impl Drop for Soc {
 #[derive(Debug, IntoPrimitive)]
 #[non_exhaustive]
 #[repr(u32)]
+#[derive(Default)]
 pub enum Domain {
+    #[default]
     AfInet = 2,
-}
-
-impl Default for Domain {
-    fn default() -> Self {
-        Self::AfInet
-    }
 }
 
 #[derive(Debug, IntoPrimitive)]
@@ -152,14 +148,10 @@ pub enum Type {
 #[derive(Debug, IntoPrimitive)]
 #[non_exhaustive]
 #[repr(u32)]
+#[derive(Default)]
 pub enum Protocol {
+    #[default]
     Default = 0,
-}
-
-impl Default for Protocol {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 #[derive(Debug)]

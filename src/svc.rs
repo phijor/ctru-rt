@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::os::mem::MemoryState;
 use crate::os::reslimit::LimitType;
 use crate::os::AsHandle;
 use crate::{
@@ -68,7 +69,14 @@ into_register_implicit! {
     usize as usize,
     bool as u32,
     MemoryPermission as u32,
-    unsafe extern "C" fn(usize) as u32,
+}
+
+impl IntoRegister for unsafe extern "C" fn(usize) {
+    type Register = u32;
+
+    unsafe fn into_register(self) -> Self::Register {
+        self as usize as u32
+    }
 }
 
 impl<T> IntoRegister for *mut T {
@@ -102,8 +110,8 @@ pub unsafe fn query_memory(addr: usize) -> Result<QueryResult> {
         svc!(0x02: (_, _, addr) -> (usize, usize, u32, u32, u32))?;
 
     // TODO: yeah, let's hope the kernel always returns valid values here
-    let permission = core::mem::transmute(permission);
-    let state = core::mem::transmute(state);
+    let permission: MemoryPermission = core::mem::transmute(permission);
+    let state: MemoryState = core::mem::transmute(state);
 
     Ok(QueryResult {
         base_process_virtual_address,
@@ -460,7 +468,7 @@ impl Timeout {
     }
 
     pub const fn forever() -> Self {
-        Self::from_nanoseconds(i64::max_value())
+        Self::from_nanoseconds(i64::MAX)
     }
 
     pub const fn none() -> Self {

@@ -56,7 +56,7 @@ impl OwnedHandle {
         unsafe { svc::close_handle(raw_handle) }
     }
 
-    fn handle(&self) -> BorrowedHandle {
+    fn handle(&self) -> BorrowedHandle<'_> {
         BorrowedHandle::new(self.handle.get())
     }
 
@@ -146,7 +146,7 @@ impl MemoryRegion {
 }
 
 pub trait AsHandle {
-    fn as_handle(&self) -> BorrowedHandle<'_>;
+    fn as_handle<'h>(&'h self) -> BorrowedHandle<'h>;
 
     fn as_raw_handle(&self) -> RawHandle {
         self.as_handle().handle
@@ -175,7 +175,7 @@ impl AsHandle for PseudoHandle {
 
 impl AsHandle for OwnedHandle {
     #[inline]
-    fn as_handle(&self) -> BorrowedHandle {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
         self.handle()
     }
 }

@@ -91,7 +91,7 @@ impl<'access, 'srv> Apt<'access, 'srv> {
 }
 
 impl AsHandle for Apt<'_, '_> {
-    fn as_handle(&self) -> BorrowedHandle {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
         self.handle.as_handle()
     }
 }

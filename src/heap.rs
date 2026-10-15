@@ -5,7 +5,7 @@
 use crate::os::reslimit::process_limits;
 use crate::os::PseudoHandle;
 use crate::result::ERROR_OUT_OF_MEMORY;
-use crate::sync::OsMutex;
+// use crate::sync::OsMutex;
 use crate::{early_debug, os::mem, result::Result, svc};
 
 use core::alloc::Allocator;

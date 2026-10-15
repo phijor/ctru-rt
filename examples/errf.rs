@@ -16,8 +16,7 @@ use ctru_rt::{
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    let mut log = debug::SvcDebugLog::default();
-    let _ = writeln!(log, "[PANIC] {}", info);
+    let _ = writeln!(debug::SvcDebugLog, "[PANIC] {}", info);
 
     ctru_rt::svc::user_break(UserBreakReason::Panic)
 }

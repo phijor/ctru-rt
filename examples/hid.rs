@@ -19,8 +19,7 @@ use log::{error, info};
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
     use ctru_rt::{debug::SvcDebugLog, svc::UserBreakReason};
-    let mut log = SvcDebugLog::default();
-    let _ = writeln!(log, "[PANIC] {}", info);
+    let _ = writeln!(SvcDebugLog, "[PANIC] {}", info);
 
     svc::user_break(UserBreakReason::Panic)
 }
@@ -48,7 +47,7 @@ fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
-            let _ = error!("Failed to run: {:?}", e);
+            error!("Failed to run: {:?}", e);
             svc::exit_process()
         }
     }

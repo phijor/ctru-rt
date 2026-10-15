@@ -7,6 +7,8 @@
 #![feature(try_trait_v2_residual)]
 #![feature(allocator_api, alloc_error_handler)]
 #![feature(maybe_uninit_array_assume_init)]
+// Required to get return address in [`ports::errf`].
+#![allow(internal_features)]
 #![feature(link_llvm_intrinsics)]
 
 // Required to access memory barrier instructions

@@ -19,19 +19,15 @@ extern "C" {
 
 #[derive(Debug, IntoPrimitive)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum ErrorType {
+    #[default]
     Generic,
     SystemMemoryDamaged,
     CardRemoved,
     Exception,
     Failure,
     Logged,
-}
-
-impl Default for ErrorType {
-    fn default() -> Self {
-        ErrorType::Generic
-    }
 }
 
 #[derive(Debug, IntoPrimitive)]

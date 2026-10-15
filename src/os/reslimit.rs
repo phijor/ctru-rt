@@ -73,7 +73,7 @@ pub struct ProcessLimits<'proc> {
     _process: PhantomData<&'proc OwnedHandle>,
 }
 
-impl<'proc> ProcessLimits<'proc> {
+impl ProcessLimits<'_> {
     pub(crate) fn get(&self, type_: LimitType) -> Limit<'_> {
         Limit {
             type_,
@@ -81,7 +81,7 @@ impl<'proc> ProcessLimits<'proc> {
         }
     }
 
-    pub fn memory_allocatable(&self) -> Limit {
+    pub fn memory_allocatable(&self) -> Limit<'_> {
         self.get(LimitType::MemoryAllocatable)
     }
 }

@@ -71,7 +71,7 @@ impl Event {
 }
 
 impl AsHandle for Event {
-    fn as_handle(&self) -> BorrowedHandle {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
         self.handle.as_handle()
     }
 }
@@ -88,7 +88,7 @@ impl AtomicHandle {
         Self(AtomicU32::new(CLOSED_HANDLE))
     }
 
-    fn get(&self) -> BorrowedHandle {
+    fn get(&self) -> BorrowedHandle<'_> {
         let raw_handle = self.0.load(Ordering::Acquire);
         BorrowedHandle::new(raw_handle)
     }
@@ -138,7 +138,7 @@ impl AtomicHandle {
         new_handle
     }
 
-    fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> BorrowedHandle {
+    fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> BorrowedHandle<'_> {
         let handle = self.get();
 
         if handle.is_closed() {
@@ -177,7 +177,7 @@ pub type Mutex<T> = lock_api::Mutex<OsMutex, T>;
 pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, OsMutex, T>;
 
 impl AsHandle for AtomicHandle {
-    fn as_handle(&self) -> BorrowedHandle {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
         let raw_handle = self.0.load(Ordering::SeqCst);
         BorrowedHandle::new(raw_handle)
     }
@@ -212,7 +212,7 @@ impl OsMutex {
         // self.handle.close()
     }
 
-    fn get(&self) -> BorrowedHandle {
+    fn get(&self) -> BorrowedHandle<'_> {
         self.handle.get_or_init(move || {
             early_debug!("Initializing OsMutex");
             const INITIALLY_LOCKED: bool = true;
@@ -258,7 +258,8 @@ unsafe impl RawMutexTimed for OsMutex {
 
     fn try_lock_until(&self, deadline: Self::Instant) -> bool {
         let now = SystemTick::now();
-        let timeout = Timeout::from_nanoseconds((deadline.count() - now.count()).max(0) as i64);
+        let delta = deadline.count().saturating_sub(now.count());
+        let timeout = Timeout::from_nanoseconds(delta as i64);
         self.try_lock_for(timeout)
     }
 }
@@ -360,6 +361,7 @@ pub mod spin {
     pub struct StickyEvent(RwLock<State>);
 
     impl StickyEvent {
+        #[allow(clippy::new_without_default)]
         pub const fn new() -> Self {
             Self(RwLock::new(State::Cleared))
         }
