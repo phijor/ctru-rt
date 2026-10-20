@@ -73,11 +73,15 @@ fn run() -> Result<()> {
         })
         .collect::<Result<_>>()?;
 
-    info!("Waiting for {} threads to finish...", threads.len());
-
     let mut sanity = 0;
     while !threads.is_empty() && sanity <= NUM_THREADS {
-        let signaled_idx = sync::Event::wait_any(done_events.as_slice(), Timeout::forever())?;
+        info!("Waiting for {} threads to finish...", threads.len());
+
+        let signaled_idx =
+            match sync::Event::wait_any(done_events.as_slice(), Timeout::from_seconds(5)) {
+                Ok(idx) => idx,
+                Err(_) => continue,
+            };
         sanity += 1;
         info!("Got signal {}", signaled_idx);
         done_events.get(signaled_idx).map(|ev| ev.clear());
