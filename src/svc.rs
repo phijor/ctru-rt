@@ -156,7 +156,7 @@ pub fn get_thread_priority(handle: BorrowedHandle) -> Result<i32> {
 }
 
 pub fn create_mutex(initially_locked: bool) -> Result<OwnedHandle> {
-    unsafe { svc!(0x13: (initially_locked) -> OwnedHandle) }
+    unsafe { svc!(0x13: (_, initially_locked) -> OwnedHandle) }
 }
 
 pub fn release_mutex(handle: BorrowedHandle) -> Result<()> {
@@ -166,7 +166,7 @@ pub fn release_mutex(handle: BorrowedHandle) -> Result<()> {
 pub fn create_event(reset_type: ResetType) -> Result<OwnedHandle> {
     let reset_type = reset_type as u32;
 
-    unsafe { svc!(0x17: (reset_type) -> OwnedHandle) }
+    unsafe { svc!(0x17: (_, reset_type) -> OwnedHandle) }
 }
 
 pub fn signal_event(handle: BorrowedHandle) -> Result<()> {
