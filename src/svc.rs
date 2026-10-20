@@ -253,7 +253,7 @@ pub fn wait_synchronization_all(handles: &[BorrowedHandle], timeout: Timeout) ->
 }
 
 pub fn wait_synchronization_any(handles: &[BorrowedHandle], timeout: Timeout) -> Result<usize> {
-    let signaled = wait_synchronization_many(handles, WAIT_ALL, timeout)?;
+    let signaled = wait_synchronization_many(handles, WAIT_FIRST, timeout)?;
 
     match usize::try_from(signaled) {
         Ok(index) => Ok(index),
