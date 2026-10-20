@@ -410,6 +410,28 @@ impl Sharedmem {
 
         fb_info.update(active_fb, fb0, fb1, stride, mode)
     }
+
+    pub(self) fn graphics_command_queue(&mut self) -> GraphicsCommandQueue {
+        const QUEUE_BASE: usize = 0x800 / size_of::<u32>();
+        const SIZE: usize = 0x200 / size_of::<u32>();
+
+        unsafe {
+            let base = self.shared_memory.as_mut_ptr().add(QUEUE_BASE);
+            let queue = base.add(self.gsp_module_thread_index as usize * SIZE);
+
+            GraphicsCommandQueue(queue)
+        }
+    }
+}
+
+struct GraphicsCommandQueue(*mut u32);
+
+impl GraphicsCommandQueue {
+    pub(self) fn clear(&self) {
+        let header = self.0.cast::<AtomicU32>();
+        unsafe { (&*header).swap(0, Ordering::AcqRel) };
+        crate::sync::mem::data_sync_barrier();
+    }
 }
 
 #[derive(Debug)]
@@ -484,11 +506,15 @@ impl Gpu {
 
         let shared_memory = Self::map_shared_memory(queue_handle)?;
 
-        Ok(Sharedmem {
+        let mut sharedmem = Sharedmem {
             gpu_events,
             gsp_module_thread_index,
             shared_memory,
-        })
+        };
+
+        sharedmem.graphics_command_queue().clear();
+
+        Ok(sharedmem)
     }
 
     fn map_shared_memory(shared_memory_handle: OwnedHandle) -> Result<MappedBlock> {
