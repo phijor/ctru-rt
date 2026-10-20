@@ -22,6 +22,8 @@ unsafe extern "C" fn _ctru_rt_thread_start(argument: usize) {
 
     (packet.entry_point)();
 
+    early_debug!("_ctru_rt_thread_start: Exiting...");
+
     svc::exit_thread();
 }
 
@@ -55,6 +57,7 @@ impl<T> ReturnValue<T> {
     }
 
     unsafe fn store(self, return_value: T) {
+        early_debug!("ReturnValue::store(ptr={:p})", &self.0);
         core::ptr::write(self.0, return_value)
     }
 }
@@ -175,16 +178,18 @@ impl ThreadBuilder {
 
         let return_value = ReturnValue::new(thread_memory.return_value);
 
-        let wrapper = move || unsafe {
+        let thread_main = move || unsafe {
+            early_debug!("ThreadBuilder::spawn(): Entered main wrapper.");
             let rv: T = f();
-            return_value.store(rv)
+            early_debug!("ThreadBuilder::spawn(): Got return value.");
+            return_value.store(rv);
         };
-        let packet = ThreadPacket::new(wrapper);
+        let packet = ThreadPacket::new(thread_main);
         let argument = ThreadPacket::into_argument(packet);
 
         debug!(
             "Launching thread: priority={}, argument={:p}, mem_start={:p}, stack_top={:p}, return_value={:p}, processor_id={}",
-            self.priority, argument as *const (), thread_memory.allocated, thread_memory.stack_top,  thread_memory.return_value, self.processor_id
+            self.priority, argument as *const (), thread_memory.allocated, thread_memory.stack_top, thread_memory.return_value, self.processor_id
         );
 
         let handle = unsafe {
