@@ -138,6 +138,15 @@ impl ScreenConfiguration {
         )
     }
 
+    fn fill_buffer(&mut self, index: FramebufferIndex, value: u8) {
+        if let Some(mut fb) = self.buffer_at(index).buffer {
+            unsafe {
+                fb.as_mut().fill(value);
+                crate::sync::mem::data_sync_barrier();
+            };
+        }
+    }
+
     fn buffer_at(&self, index: FramebufferIndex) -> &Framebuffer {
         match index {
             FramebufferIndex::First => &self.fb0,
@@ -147,6 +156,14 @@ impl ScreenConfiguration {
 
     fn active_buffer(&self) -> &Framebuffer {
         self.buffer_at(self.active_fb)
+    }
+
+    fn inactive_buffer(&self) -> &Framebuffer {
+        self.buffer_at(self.active_fb.swap())
+    }
+
+    fn swap_buffers(&mut self) {
+        self.active_fb = self.active_fb.swap();
     }
 }
 
@@ -203,6 +220,21 @@ impl<'g> Grapics<'g> {
 
     pub fn gpu(&'g mut self) -> &'g mut Gpu {
         self.gpu
+    }
+
+    pub fn fill_screen(&mut self, value: u8) {
+        // self.top.fill_buffer(FramebufferIndex::First, value);
+        // self.top.fill_buffer(FramebufferIndex::Second, value);
+        self.bottom.fill_buffer(FramebufferIndex::First, value);
+        self.bottom
+            .fill_buffer(FramebufferIndex::Second, 0xFF - value);
+        // if let Some(mut fb) = self.bottom.buffer_at(FramebufferIndex::First).buffer {
+        //     unsafe {
+        //         fb.as_mut().fill(value);
+        //         crate::sync::mem::data_sync_barrier();
+        //     }
+        // }
+        // self.top.swap_buffers()
     }
 
     pub fn wait_vblank0(&mut self) -> Result<()> {

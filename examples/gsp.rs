@@ -35,18 +35,21 @@ fn run() -> Result<()> {
     let mut gfx = Grapics::init_default(&mut gpu)?;
     info!("Initialized graphics: {:#0x?}", gfx);
 
+    // gfx.fill_screen(0x80);
+
     let hid = Hid::init(&srv)?;
 
-    let mut runs = 0..5;
+    let mut color: u32 = 0;
     info!("Press START to exit");
     while !hid.last_keypad().start() {
-        svc::sleep_thread(Timeout::from_seconds(1));
-        info!("Waiting for VBLANK0...");
+        gfx.fill_screen(color as u8);
+        color = color.wrapping_mul(0x41C64E6D).wrapping_add(0x00006073);
+        color += 0x10;
 
+        info!("Waiting for VBLANK0...");
         gfx.wait_vblank0().ok();
-        if runs.next().is_none() {
-            break;
-        }
+
+        svc::sleep_thread(Timeout::from_seconds(1));
     }
 
     info!("Exiting...");

@@ -144,7 +144,7 @@ pub enum FramebufferIndex {
 }
 
 impl FramebufferIndex {
-    fn swap(self) -> Self {
+    pub fn swap(self) -> Self {
         match self {
             Self::First => Self::Second,
             Self::Second => Self::First,
