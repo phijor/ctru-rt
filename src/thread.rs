@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use core::fmt;
+
 use crate::early_debug;
 use crate::os::{AsHandle, OwnedHandle};
 use crate::result::Result;
@@ -58,12 +60,22 @@ impl<T> ReturnValue<T> {
 
 unsafe impl<T> Send for ReturnValue<T> where T: Send + 'static {}
 
-#[derive(Debug)]
 struct ThreadMemory<T> {
     allocated: *mut u8,
     stack_top: *mut u8,
     return_value: *mut T,
     layout: Layout,
+}
+
+impl<T> fmt::Debug for ThreadMemory<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ThreadMemory")
+            .field("allocate", &self.allocated)
+            .field("stack_top", &self.stack_top)
+            .field("return_value", &self.return_value)
+            .field("layout", &self.layout)
+            .finish()
+    }
 }
 
 impl<T> ThreadMemory<T> {
