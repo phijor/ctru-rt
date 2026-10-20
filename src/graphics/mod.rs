@@ -59,6 +59,7 @@ impl Framebuffer {
         debug!("New framebuffer: {:p}", buffer);
 
         unsafe { buffer.as_mut() }.fill(0xff);
+        crate::sync::mem::data_sync_barrier();
 
         let buffer = Some(buffer);
 
