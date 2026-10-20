@@ -517,6 +517,11 @@ impl Gpu {
         Ok(sharedmem)
     }
 
+    fn unregister_interrupt_relay_queue(&mut self) -> Result<()> {
+        let _ = IpcRequest::command(0x14).dispatch(self.access.as_handle())?;
+        Ok(())
+    }
+
     fn map_shared_memory(shared_memory_handle: OwnedHandle) -> Result<MappedBlock> {
         SharedMemoryMapper::global().map(
             shared_memory_handle,
@@ -666,6 +671,12 @@ impl Gpu {
             .parameter(flags as u32)
             .dispatch(&self.access)?;
         Ok(())
+    }
+}
+
+impl Drop for Gpu {
+    fn drop(&mut self) {
+        let _ = self.unregister_interrupt_relay_queue();
     }
 }
 
