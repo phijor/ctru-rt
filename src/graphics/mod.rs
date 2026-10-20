@@ -187,7 +187,7 @@ impl<'g> Grapics<'g> {
     }
 
     pub fn gpu(&'g mut self) -> &'g mut Gpu {
-        &mut self.gpu
+        self.gpu
     }
 
     pub fn wait_vblank0(&mut self) -> Result<()> {

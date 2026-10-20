@@ -59,9 +59,10 @@ pub struct SharedMemoryMapper {
 const SHAREDMEM_START: usize = 0x1000_0000;
 const SHAREDMEM_END: usize = 0x1400_0000;
 
-static mut GLOBAL_SHAREDMEMORY_MAPPER: SharedMemoryMapper = SharedMemoryMapper::new();
+static GLOBAL_SHAREDMEMORY_MAPPER: SharedMemoryMapper = SharedMemoryMapper::new();
 
 impl SharedMemoryMapper {
+    #[allow(clippy::new_without_default)]
     pub const fn new() -> Self {
         Self {
             next_candidate: AtomicUsize::new(SHAREDMEM_START),
@@ -72,7 +73,7 @@ impl SharedMemoryMapper {
         // (UN)SAFETY: I *know* global statics are bad.
         //
         // This will get a proper implementation once there's support for `RwLock`s.
-        unsafe { &GLOBAL_SHAREDMEMORY_MAPPER }
+        &GLOBAL_SHAREDMEMORY_MAPPER
     }
 
     pub fn map(
@@ -115,7 +116,7 @@ impl SharedMemoryMapper {
     }
 
     pub fn unmap(&self, block: MappedBlock) -> Result<OwnedHandle> {
-        unsafe { svc::unmap_memory_block(block.handle.handle(), block.start as usize)? }
+        unsafe { svc::unmap_memory_block(block.handle.handle(), block.start)? }
 
         self.next_candidate.store(block.start, Ordering::Release);
 

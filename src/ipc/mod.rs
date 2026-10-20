@@ -97,7 +97,7 @@ impl CommandBuffer {
 }
 
 #[doc(hidden)]
-pub(self) mod state {
+mod state {
     pub(crate) trait State {}
 
     macro_rules! state {

@@ -48,7 +48,7 @@ pub struct Apt<'access, 'srv> {
 }
 impl<'access, 'srv> Apt<'access, 'srv> {
     fn new(handle: OwnedHandle, access: &'access mut AptAccess<'srv>) -> Self {
-        drop(access);
+        let _ = access;
         Self {
             handle,
             _access: PhantomData,

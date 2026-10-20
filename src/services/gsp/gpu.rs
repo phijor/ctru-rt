@@ -52,7 +52,7 @@ impl Screen {
     }
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 struct InterruptHeader {
     current_index: u8,
     events_total: u8,
@@ -323,7 +323,7 @@ impl Sharedmem {
         let event_buf = unsafe {
             self.shared_memory
                 .as_ptr()
-                .offset(self.gsp_module_thread_index as isize * 0x10)
+                .add(self.gsp_module_thread_index as usize * 0x10)
                 .cast::<u8>()
         };
         InterruptInfo { event_buf }
@@ -640,7 +640,7 @@ impl AccessRightsToken {
 }
 
 impl AsHandle for AccessRightsToken {
-    fn as_handle(&self) -> BorrowedHandle {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
         self.service_handle.as_handle()
     }
 }
