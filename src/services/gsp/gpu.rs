@@ -27,7 +27,7 @@ pub enum Screen {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ScreenDimensions {
+pub struct ScreenDimensions {
     pub width: u16,
     pub height: u16,
 }

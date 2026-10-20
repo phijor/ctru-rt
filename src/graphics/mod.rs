@@ -359,6 +359,17 @@ impl<'g> Graphics<'g> {
         self.gpu
     }
 
+    pub fn dimensions(&self, screen: Screen) -> &ScreenDimensions {
+        &self.screen_configuration(screen).dimensions
+    }
+
+    fn screen_configuration(&self, screen: Screen) -> &ScreenConfiguration {
+        match screen {
+            Screen::Top => &self.top,
+            Screen::Bottom => &self.bottom,
+        }
+    }
+
     fn screen_configuration_mut(&mut self, screen: Screen) -> &mut ScreenConfiguration {
         match screen {
             Screen::Top => &mut self.top,
@@ -381,6 +392,39 @@ impl<'g> Graphics<'g> {
                 let (chunks, _) = buffer.as_mut().as_chunks_mut::<3>();
                 chunks.fill(pixel);
             });
+    }
+
+    pub fn with_buffer_mut<F>(&mut self, screen: Screen, f: F)
+    where
+        F: FnOnce(&mut NonNull<[u8]>),
+    {
+        self.screen_configuration_mut(screen)
+            .inactive_buffer_mut()
+            .with_mut(f)
+    }
+
+    pub fn with_pixels_rgb_mut<F>(&mut self, screen: Screen, f: F)
+    where
+        F: FnOnce(&mut [[u8; 3]]),
+    {
+        self.screen_configuration_mut(screen)
+            .inactive_buffer_mut()
+            .with_mut(|buffer| {
+                let (chunks, _) = unsafe { buffer.as_mut() }.as_chunks_mut::<3>();
+                f(chunks)
+            })
+    }
+
+    pub fn set_pixel_rgb(&mut self, screen: Screen, x: u16, y: u16, pixel: [u8; 3]) {
+        let cfg = self.screen_configuration_mut(screen);
+        let offset = x * cfg.dimensions.width + y;
+
+        cfg.inactive_buffer_mut().with_mut(|buffer| {
+            let (chunks, _) = unsafe { buffer.as_mut() }.as_chunks_mut::<3>();
+            if let Some(target) = chunks.get_mut(usize::from(offset)) {
+                *target = pixel;
+            }
+        });
     }
 
     /// Make the off-screen buffer of both screens the visible one.

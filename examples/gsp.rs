@@ -44,16 +44,26 @@ fn run() -> Result<()> {
     let hid = Hid::init(&srv)?;
 
     let mut color: u8 = 0;
+    let mut rng = 0x1234_5678u32;
     info!("Press START to exit");
     while !hid.last_keypad().start() {
         // Draw into the off-screen buffer, publish it, then wait for the scanout to pick it
         // up.  `swap_buffers` flushes the data cache, so the GPU sees what we just wrote.
         gfx.fill_screen_rgb(Screen::Top, [color, color + 0x50, color + 0xa0]);
-        gfx.fill_screen(Screen::Bottom, 0xFF - color);
+        gfx.with_pixels_rgb_mut(Screen::Bottom, |pixels| {
+            for pixel in pixels {
+                rng = rng.wrapping_mul(0x41C64E6D).wrapping_add(0x00006073);
+                *pixel = if rng & (1 << 16) == 0 {
+                    [0, 0, 0]
+                } else {
+                    [0xff, 0xff, 0xff]
+                };
+            }
+        });
         gfx.swap_buffers()?;
         gfx.wait_vblank0()?;
 
-        color = color.wrapping_add(0x04);
+        color = color.wrapping_add(0x01);
     }
 
     info!("Exiting...");
