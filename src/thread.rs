@@ -154,8 +154,8 @@ impl Default for ThreadBuilder {
     fn default() -> Self {
         Self {
             priority: 0x30,
-            stack_size: 0x1000,
-            processor_id: -2,
+            stack_size: 0x8000,
+            processor_id: -1,
         }
     }
 }
