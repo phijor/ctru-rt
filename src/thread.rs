@@ -75,6 +75,7 @@ impl<T> ThreadMemory<T> {
         let stack_size = layout.size();
 
         let (layout, rv_offset) = layout.extend(Layout::new::<T>()).unwrap();
+        let layout = layout.pad_to_align();
 
         let allocated = unsafe { alloc::alloc::alloc(layout) };
 
