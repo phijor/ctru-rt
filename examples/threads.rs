@@ -8,26 +8,22 @@
 extern crate alloc;
 
 use alloc::{collections::BTreeMap, vec::Vec};
-use ctru_rt::{
-    os::{AsHandle, PseudoHandle},
-    svc::Timeout,
-};
-
 use core::{fmt::Write, panic::PanicInfo};
 
 use ctru_rt::{
     debug::{init_log, SvcDebugLog},
-    entry,
+    early_debug, entry,
+    os::{AsHandle, PseudoHandle},
     result::Result,
-    svc, sync, thread,
+    svc::{self, Timeout},
+    sync, thread,
 };
 
 use log::{error, info, warn};
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    let mut log = SvcDebugLog::default();
-    let _ = writeln!(log, "{}", info);
+    let _ = writeln!(SvcDebugLog, "{}", info);
 
     svc::exit_thread()
 }
