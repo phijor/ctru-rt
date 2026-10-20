@@ -4,7 +4,7 @@
 
 #![no_std]
 #![feature(try_trait_v2)]
-#![feature(control_flow_enum)]
+#![feature(try_trait_v2_residual)]
 #![feature(alloc_error_handler)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(link_llvm_intrinsics)]

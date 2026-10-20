@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use core::ops::{ControlFlow, FromResidual};
+use core::ops::{ControlFlow, FromResidual, Residual};
 use core::{num::NonZeroU32, ops::Try};
 
 use alloc::fmt;
@@ -59,6 +59,10 @@ impl FromResidual for ResultCode {
     fn from_residual(ec: ErrorCode) -> Self {
         Self(ec.0.into())
     }
+}
+
+impl Residual<()> for ErrorCode {
+    type TryType = ResultCode;
 }
 
 impl Try for ResultCode {
