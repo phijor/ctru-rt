@@ -25,6 +25,7 @@ unsafe extern "C" fn _ctru_rt_thread_start(argument: usize) {
     svc::exit_thread();
 }
 
+#[repr(transparent)]
 struct ThreadPacket {
     entry_point: Box<dyn FnOnce()>,
 }
