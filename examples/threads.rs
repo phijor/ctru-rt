@@ -13,7 +13,6 @@ use ctru_rt::{
     svc::Timeout,
 };
 
-use core::time::Duration;
 use core::{fmt::Write, panic::PanicInfo};
 
 use ctru_rt::{
@@ -49,9 +48,6 @@ fn run() -> Result<()> {
         .iter()
         .zip(0usize..NUM_THREADS)
         .map(|(event, id)| {
-            let timeout = Duration::from_secs((NUM_THREADS - id) as u64);
-            let color = 30 + id.min(7);
-
             let event: sync::Event = event.clone();
 
             let priority = svc::get_thread_priority(PseudoHandle::ActiveThread.as_handle())
@@ -63,17 +59,21 @@ fn run() -> Result<()> {
                 .spawn(move || {
                     // This closure is executed in a new thread.
 
-                    info!("\x1b[{}mThread {}\x1b[0m: Hello!", color, id);
+                    // let timeout = Duration::from_secs((NUM_THREADS - id) as u64);
+                    let color = 30 + id.min(7);
 
-                    // Slowly count to five
-                    for i in 0..5 {
-                        info!("\x1b[{}mThread {}\x1b[0m: Counting {}...", color, id, 5 - i);
-                        svc::sleep_thread(timeout.into());
-                    }
+                    early_debug!("\x1b[{}mThread {}\x1b[0m: Hello!", color, id);
+
+                    // // Slowly count to five
+                    // for i in 0..5 {
+                    //     early_debug!("\x1b[{}mThread {}\x1b[0m: Counting {}...", color, id, 5 - i);
+                    //     svc::sleep_thread(timeout.into());
+                    // }
 
                     // Signal the main thread that we're done here.
                     // The main thread sleeps while waiting for these events to occur.
                     let _ = event.signal();
+                    early_debug!("Done in thread id={id}",);
 
                     // Return this thread's ID.
                     return id;
