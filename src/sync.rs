@@ -19,7 +19,7 @@ pub enum ResetType {
     Pulse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct Event {
     handle: OwnedHandle,

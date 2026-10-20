@@ -34,7 +34,6 @@ impl BorrowedHandle<'_> {
     }
 }
 
-#[derive(Clone)]
 #[repr(transparent)]
 pub struct OwnedHandle {
     handle: ValidRawHandle,

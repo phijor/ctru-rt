@@ -44,7 +44,7 @@ fn run() -> Result<()> {
         .iter()
         .zip(0usize..NUM_THREADS)
         .map(|(event, id)| {
-            let event: sync::Event = event.clone();
+            let event: sync::Event = event.duplicate()?;
 
             let priority = svc::get_thread_priority(PseudoHandle::ActiveThread.as_handle())
                 .map(|prio| prio.saturating_sub((id + 1) as i32))
