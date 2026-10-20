@@ -8,6 +8,13 @@
 #![feature(allocator_api, alloc_error_handler)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(link_llvm_intrinsics)]
+
+// Required to access memory barrier instructions
+// in [core::arch::arm] even though the 3DS ARM11 MPCore does not support NEON instructions.
+#![feature(stdarch_arm_neon_intrinsics)]
+// Expose memory barrier instructions (`__dsb` etc.)
+#![feature(stdarch_arm_barrier)]
+
 // Allow dead code for now
 #![allow(dead_code)]
 #![allow(clippy::missing_safety_doc)]

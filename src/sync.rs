@@ -410,3 +410,13 @@ pub mod spin {
 
     pub struct StickyEventClearedError;
 }
+
+pub mod mem {
+    use core::arch::arm::{__dsb, SY};
+
+    #[inline(always)]
+    pub fn data_sync_barrier() {
+        // SAFETY: ARMv6K implements the full-system CP15 barrier operation.
+        unsafe { __dsb(SY) };
+    }
+}
