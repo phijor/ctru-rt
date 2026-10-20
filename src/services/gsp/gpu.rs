@@ -160,7 +160,7 @@ impl core::ops::Not for FramebufferIndex {
 }
 
 #[repr(C)]
-struct FramebufferInfoInner {
+struct FramebufferInfoSlot {
     active_framebuffer: u32,
     fb0_vaddr: u32,
     fb1_vaddr: u32,
@@ -171,19 +171,28 @@ struct FramebufferInfoInner {
 }
 
 struct FramebufferInfo {
+    /// Pointer to the framebuffer information.
+    ///
+    /// At offset 0 there is a header ([FramebufferInfoHeader]), followed by two slots of
+    /// [FramebufferInfoSlot], containing the actual information.  The header contains the index of
+    /// the currently active slot.
     info: *mut u32,
 }
 
 struct FramebufferInfoHeader(u32);
 
 impl FramebufferInfoHeader {
-    fn update_index(&self, index: FramebufferIndex) -> Self {
-        const FB_INDEX: usize = 0;
-        const FB_UPDATE: usize = 1;
+    const ACTIVE_SLOT: usize = 0;
+    const UPDATE: usize = 1;
 
+    fn slot(&self) -> u8 {
+        self.0.to_le_bytes()[Self::ACTIVE_SLOT] & 0b1
+    }
+
+    fn update_slot(&self, active_slot: u8) -> Self {
         let mut updated: [u8; 4] = self.0.to_le_bytes();
-        updated[FB_INDEX] = u8::from(index);
-        updated[FB_UPDATE] = 1;
+        updated[Self::ACTIVE_SLOT] = active_slot & 0b1;
+        updated[Self::UPDATE] = 1;
         Self(u32::from_le_bytes(updated))
     }
 }
@@ -193,21 +202,15 @@ impl FramebufferInfo {
         unsafe { &*(self.info as *const AtomicU32) }
     }
 
-    fn load_index(&self, order: Ordering) -> FramebufferIndex {
-        let index = self.header().load(order).to_le_bytes()[0];
-        FramebufferIndex::try_from(index).expect("Invalid framebuffer index from GSP")
+    fn load_header(&self) -> FramebufferInfoHeader {
+        FramebufferInfoHeader(self.header().load(Ordering::Acquire))
     }
 
-    fn info_at(&self, index: FramebufferIndex) -> *mut FramebufferInfoInner {
-        // TODO: replace .offset() by .add()
-        unsafe { (self.info.add(1) as *mut FramebufferInfoInner).add(u8::from(index) as usize) }
-    }
-
-    fn trigger_update(&self, queued_fb: FramebufferIndex) {
+    fn update_header(&self, active_slot: u8) {
         let header = self.header();
         let mut current = FramebufferInfoHeader(header.load(Ordering::Acquire));
         loop {
-            let updated = current.update_index(queued_fb);
+            let updated = current.update_slot(active_slot);
 
             match header.compare_exchange_weak(
                 current.0,
@@ -219,6 +222,20 @@ impl FramebufferInfo {
                 Err(new) => current = FramebufferInfoHeader(new),
             }
         }
+
+        core::sync::atomic::fence(Ordering::Release);
+    }
+
+    #[inline]
+    fn write_info(&self, slot_index: u8, fb_info: FramebufferInfoSlot) {
+        let slot_index = usize::from(slot_index & 0b1);
+        // SAFETY: index is either 0 or 1
+        let slot: *mut FramebufferInfoSlot =
+            unsafe { (self.info.add(1) as *mut FramebufferInfoSlot).add(slot_index) };
+
+        // SAFETY: slot points to a valid info slot
+        unsafe { slot.write_volatile(fb_info) };
+        crate::sync::mem::data_sync_barrier();
     }
 
     #[inline]
@@ -232,24 +249,25 @@ impl FramebufferInfo {
     ) {
         debug!("Updating framebuffer: active = {:?}, fb0 = {:p}, fb1 = {:p}, stride = {}, format = {:b}", active_fb, fb0, fb1, stride, format);
         {
-            let active_fb = u8::from(active_fb) as u32;
-            let fb_info = FramebufferInfoInner {
-                active_framebuffer: active_fb,
-                fb0_vaddr: fb0 as u32,
-                fb1_vaddr: fb1 as u32,
-                stride,
-                format,
-                display_select: active_fb,
-                unknown: 0,
+            let fb_info = {
+                let active_fb = u8::from(active_fb) as u32;
+                FramebufferInfoSlot {
+                    active_framebuffer: active_fb,
+                    fb0_vaddr: fb0 as u32,
+                    fb1_vaddr: fb1 as u32,
+                    stride,
+                    format,
+                    display_select: active_fb,
+                    unknown: 0,
+                }
             };
 
-            let next_fb = self.load_index(Ordering::Acquire).swap();
-            unsafe {
-                self.info_at(next_fb).write(fb_info);
-            }
-
-            core::sync::atomic::fence(Ordering::Release);
-            self.trigger_update(next_fb)
+            // Read the frame buffer info header.
+            // Determine the currently active index, and from that the next free index to write to.
+            // Write the updated framebuffer information into that index, and trigger an update.
+            let next_index = self.load_header().slot() ^ 0b1;
+            self.write_info(next_index, fb_info);
+            self.update_header(next_index);
         }
     }
 }
