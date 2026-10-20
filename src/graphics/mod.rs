@@ -127,14 +127,26 @@ impl ScreenConfiguration {
     }
 
     fn present_buffer(&self, screen: Screen, gpu: &mut Gpu) {
+        let fb = self.active_buffer();
         gpu.present_buffer(
             screen,
             self.active_fb,
-            self.fb0.as_ptr(),
-            self.fb0.as_ptr(), // not a typo, only 2D mode for now
+            fb.as_ptr(),
+            fb.as_ptr(), // not a typo, only 2D mode for now
             self.stride(),
             self.mode(screen),
         )
+    }
+
+    fn buffer_at(&self, index: FramebufferIndex) -> &Framebuffer {
+        match index {
+            FramebufferIndex::First => &self.fb0,
+            FramebufferIndex::Second => &self.fb1,
+        }
+    }
+
+    fn active_buffer(&self) -> &Framebuffer {
+        self.buffer_at(self.active_fb)
     }
 }
 
