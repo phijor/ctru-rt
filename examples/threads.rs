@@ -8,7 +8,10 @@
 extern crate alloc;
 
 use alloc::{collections::BTreeMap, vec::Vec};
-use ctru_rt::svc::Timeout;
+use ctru_rt::{
+    os::{AsHandle, PseudoHandle},
+    svc::Timeout,
+};
 
 use core::time::Duration;
 use core::{fmt::Write, panic::PanicInfo};
@@ -51,24 +54,30 @@ fn run() -> Result<()> {
 
             let event: sync::Event = event.clone();
 
-            let thread = thread::spawn(move || {
-                // This closure is executed in a new thread.
+            let priority = svc::get_thread_priority(PseudoHandle::ActiveThread.as_handle())
+                .map(|prio| prio.saturating_sub((id + 1) as i32))
+                .unwrap_or(0);
 
-                info!("\x1b[{}mThread {}\x1b[0m: Hello!", color, id);
+            let thread = thread::ThreadBuilder::default()
+                .with_priority(priority)
+                .spawn(move || {
+                    // This closure is executed in a new thread.
 
-                // Slowly count to five
-                for i in 0..5 {
-                    info!("\x1b[{}mThread {}\x1b[0m: Counting {}...", color, id, 5 - i);
-                    svc::sleep_thread(timeout.into());
-                }
+                    info!("\x1b[{}mThread {}\x1b[0m: Hello!", color, id);
 
-                // Signal the main thread that we're done here.
-                // The main thread sleeps while waiting for these events to occur.
-                let _ = event.signal();
+                    // Slowly count to five
+                    for i in 0..5 {
+                        info!("\x1b[{}mThread {}\x1b[0m: Counting {}...", color, id, 5 - i);
+                        svc::sleep_thread(timeout.into());
+                    }
 
-                // Return this thread's ID.
-                return id;
-            })?;
+                    // Signal the main thread that we're done here.
+                    // The main thread sleeps while waiting for these events to occur.
+                    let _ = event.signal();
+
+                    // Return this thread's ID.
+                    return id;
+                })?;
             Ok((id, thread))
         })
         .collect::<Result<_>>()?;
