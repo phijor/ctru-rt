@@ -223,9 +223,10 @@ pub fn wait_synchronization(handle: BorrowedHandle, timeout: Timeout) -> Result<
         handle.is_open(),
         "svc::wait_synchronization(): Received closed handle!"
     );
-    let (ns_high, ns_low) = (timeout.reg_high(), timeout.reg_low());
+    let (ns_low, ns_high) = (timeout.reg_low(), timeout.reg_high());
 
-    unsafe { svc!(0x24: (handle, _, ns_high, ns_low)) }
+    // The 64-bit timeout is passed in an even register pair: low word in r2, high word in r3.
+    unsafe { svc!(0x24: (handle, _, ns_low, ns_high)) }
 }
 
 pub fn wait_synchronization_many(
