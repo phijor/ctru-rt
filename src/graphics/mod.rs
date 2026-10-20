@@ -16,7 +16,7 @@ use num_enum::IntoPrimitive;
 #[repr(u8)]
 pub enum FramebufferColorFormat {
     RGBA8,
-    BGR8,
+    RGB8,
     RGB565,
     RGB5A1,
     RGBA4,
@@ -26,8 +26,10 @@ impl FramebufferColorFormat {
     pub(crate) const fn bytes_per_pixel(&self) -> usize {
         match self {
             Self::RGBA8 => 4,
-            Self::BGR8 => 3,
-            _ => 2,
+            Self::RGB8 => 3,
+            Self::RGB565 => 2,
+            Self::RGB5A1 => 2,
+            Self::RGBA4 => 2,
         }
     }
 }
@@ -146,8 +148,8 @@ pub struct Grapics<'g> {
 
 impl<'g> Grapics<'g> {
     pub fn init_default(gpu: &'g mut Gpu) -> Result<Self> {
-        use FramebufferColorFormat::BGR8;
-        Self::init(gpu, BGR8, BGR8)
+        use FramebufferColorFormat::RGB8;
+        Self::init(gpu, RGB8, RGB8)
     }
 
     pub fn init(
