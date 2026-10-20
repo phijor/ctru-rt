@@ -49,7 +49,7 @@ fn run() -> Result<()> {
             let timeout = Duration::from_secs((NUM_THREADS - id) as u64);
             let color = 30 + id.min(7);
 
-            let event = event.duplicate()?;
+            let event: sync::Event = event.clone();
 
             let thread = thread::spawn(move || {
                 // This closure is executed in a new thread.
