@@ -24,9 +24,8 @@ SECTIONS
 
     .text ALIGN(4K) :
     {
-        KEEP( ctru-rt.o(.text) )
-        KEEP( ctru-rt.o(.crt0) )
-        KEEP( ctru-rt.o(.rsrt0) )
+        /* `_start` and the `_prm` block must sit at the very start of the code segment. */
+        KEEP( *(.crt0) )
         KEEP( *(.rsrt0) )
         KEEP( *(.init) )
         . = ALIGN(4);
