@@ -5,24 +5,21 @@
 #![no_std]
 #![no_main]
 
-use core::{fmt::Write, panic::PanicInfo};
+use core::panic::PanicInfo;
 
 use log::{error, info};
 
 use ctru_rt::{
-    debug::SvcDebugLog,
     entry,
     ports::srv::Srv,
     result::Result,
     services::hid::Hid,
-    svc::{sleep_thread, Timeout, UserBreakReason},
+    svc::{sleep_thread, Timeout},
 };
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    let _ = writeln!(SvcDebugLog, "[PANIC] {}", info);
-
-    ctru_rt::svc::user_break(UserBreakReason::Panic)
+    ctru_rt::panic::user_break(info)
 }
 
 fn run() -> Result<()> {

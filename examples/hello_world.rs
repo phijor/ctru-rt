@@ -5,23 +5,16 @@
 #![no_std]
 #![no_main]
 
+use core::panic::PanicInfo;
 use core::time::Duration;
-use core::{fmt::Write, panic::PanicInfo};
 
-use ctru_rt::{
-    debug::{init_log, SvcDebugLog},
-    entry, env, os,
-    result::ResultCode,
-};
+use ctru_rt::{debug::init_log, entry, env, os, result::ResultCode};
 
 use log::info;
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    let mut log = SvcDebugLog;
-    let _ = write!(log, "{}", info);
-
-    ctru_rt::svc::exit_process()
+    ctru_rt::panic::exit_process(info)
 }
 
 #[entry]

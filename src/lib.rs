@@ -25,6 +25,7 @@ pub mod graphics;
 pub mod heap;
 pub mod ipc;
 pub mod os;
+pub mod panic;
 pub mod ports;
 pub mod result;
 pub mod services;

@@ -7,7 +7,7 @@
 
 extern crate alloc;
 
-use core::{fmt::Write, panic::PanicInfo};
+use core::panic::PanicInfo;
 
 use alloc::{boxed::Box, vec};
 
@@ -26,10 +26,7 @@ use log::{error, info};
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    use ctru_rt::{debug::SvcDebugLog, svc::UserBreakReason};
-    let _ = writeln!(SvcDebugLog, "[PANIC] {}", info);
-
-    svc::user_break(UserBreakReason::Panic)
+    ctru_rt::panic::user_break(info)
 }
 
 const FRAMEBUFFER_ALLOCATOR: FramebufferAllocator = FramebufferAllocator::Linear;

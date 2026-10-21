@@ -10,24 +10,15 @@ extern crate alloc;
 
 use ctru_rt::svc::Timeout;
 
-use core::{fmt::Write, panic::PanicInfo};
+use core::panic::PanicInfo;
 
-use ctru_rt::{
-    debug::{init_log, SvcDebugLog},
-    entry,
-    result::Result,
-    svc,
-    sync::Mutex,
-};
+use ctru_rt::{debug::init_log, entry, result::Result, svc, sync::Mutex};
 
 use log::{error, info};
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    let mut log = SvcDebugLog::default();
-    let _ = writeln!(log, "{}", info);
-
-    svc::exit_thread()
+    ctru_rt::panic::exit_thread(info)
 }
 
 /// Spawn a bunch of worker threads which slowly count to five and return some value when done.

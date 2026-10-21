@@ -8,10 +8,10 @@
 extern crate alloc;
 
 use alloc::{collections::BTreeMap, vec::Vec};
-use core::{fmt::Write, panic::PanicInfo};
+use core::panic::PanicInfo;
 
 use ctru_rt::{
-    debug::{init_log, SvcDebugLog},
+    debug::init_log,
     early_debug, entry,
     os::{AsHandle, PseudoHandle},
     result::Result,
@@ -23,9 +23,7 @@ use log::{error, info, warn};
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {
-    let _ = writeln!(SvcDebugLog, "{}", info);
-
-    svc::exit_thread()
+    ctru_rt::panic::exit_thread(info)
 }
 
 /// Spawn a bunch of worker threads which slowly count to five and return some value when done.
