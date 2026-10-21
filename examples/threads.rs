@@ -8,11 +8,11 @@
 extern crate alloc;
 
 use alloc::{collections::BTreeMap, vec::Vec};
-use core::panic::PanicInfo;
+use core::{panic::PanicInfo, time::Duration};
 
 use ctru_rt::{
     debug::init_log,
-    early_debug, entry,
+    entry,
     os::{AsHandle, PseudoHandle},
     result::Result,
     svc::{self, Timeout},
@@ -53,21 +53,21 @@ fn run() -> Result<()> {
                 .spawn(move || {
                     // This closure is executed in a new thread.
 
-                    // let timeout = Duration::from_secs((NUM_THREADS - id) as u64);
+                    let timeout = Duration::from_secs((NUM_THREADS - id) as u64);
                     let color = 30 + id.min(7);
 
-                    early_debug!("\x1b[{}mThread {}\x1b[0m: Hello!", color, id);
+                    info!("\x1b[{}mThread {}\x1b[0m: Hello!", color, id);
 
-                    // // Slowly count to five
-                    // for i in 0..5 {
-                    //     early_debug!("\x1b[{}mThread {}\x1b[0m: Counting {}...", color, id, 5 - i);
-                    //     svc::sleep_thread(timeout.into());
-                    // }
+                    // Slowly count to five
+                    for i in 0..5 {
+                        info!("\x1b[{}mThread {}\x1b[0m: Counting {}...", color, id, 5 - i);
+                        svc::sleep_thread(timeout.into());
+                    }
 
                     // Signal the main thread that we're done here.
                     // The main thread sleeps while waiting for these events to occur.
                     let _ = event.signal();
-                    early_debug!("Done in thread id={id}",);
+                    info!("Done in thread id={id}");
 
                     // Return this thread's ID.
                     return id;
