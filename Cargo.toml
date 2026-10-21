@@ -16,7 +16,6 @@ panic = "abort"
 ctru-rt-macros = { path = "ctru-rt-macros" }
 log = { version = "0.4", default-features = false, features = ["max_level_trace", "release_max_level_info"] }
 lock_api = "0.4.2"
-spin = { version = "0.9.3", default-features = false, features = ["lazy", "rwlock", "lock_api", "spin_mutex", "mutex"] }
 num_enum = { version = "0.7.0", default-features = false, features = [] }
 talc = "3.1.0"
 
