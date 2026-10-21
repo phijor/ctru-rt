@@ -274,7 +274,15 @@ pub fn get_system_tick_count() -> u64 {
     let tick_low: u32;
     let tick_high: u32;
     unsafe {
-        asm!("svc 0x28", lateout("r0") tick_high, lateout("r1") tick_low);
+        asm!(
+            "svc 0x28",
+            lateout("r0") tick_high,
+            lateout("r1") tick_low,
+            // The kernel only preserves r4–r11.
+            lateout("r2") _,
+            lateout("r3") _,
+            lateout("r12") _,
+        );
     }
     (tick_high as u64) << 32 | tick_low as u64
 }
@@ -453,7 +461,17 @@ pub fn flush_process_data_cache(
 }
 
 pub fn stop_point() {
-    unsafe { asm!("svc 0xff") }
+    // The kernel only preserves r4–r11.
+    unsafe {
+        asm!(
+            "svc 0xff",
+            lateout("r0") _,
+            lateout("r1") _,
+            lateout("r2") _,
+            lateout("r3") _,
+            lateout("r12") _,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
