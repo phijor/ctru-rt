@@ -6,8 +6,6 @@ use crate::{result::Result, svc};
 
 use core::{fmt, marker::PhantomData, num::NonZeroU32};
 
-use log::debug;
-
 pub mod cfgmem;
 pub mod mem;
 pub mod reslimit;
@@ -76,7 +74,7 @@ impl OwnedHandle {
 
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
-        debug!("Dropping handle {:08x?}", self);
+        crate::early_debug!("Dropping handle {:08x?}", self);
         let _ = self.close();
     }
 }
