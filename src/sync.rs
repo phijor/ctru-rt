@@ -230,7 +230,7 @@ impl OsMutex {
     fn get(&self) -> BorrowedHandle<'_> {
         self.handle.get_or_init(move || {
             early_debug!("Initializing OsMutex");
-            const INITIALLY_LOCKED: bool = true;
+            const INITIALLY_LOCKED: bool = false;
             svc::create_mutex(INITIALLY_LOCKED).expect("Failed to create new mutex")
         })
     }
