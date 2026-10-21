@@ -6,6 +6,8 @@ use core::ptr::NonNull;
 use log::debug;
 use talc::{ErrOnOom, Talc, Talck};
 
+use crate::sync::arbitrate::RawMutex;
+
 /// The recommended alignment for allocations in VRAM.
 ///
 /// Callers are expected to build their [`Layout`] with this alignment.
@@ -13,7 +15,7 @@ use talc::{ErrOnOom, Talc, Talck};
 pub(crate) const ALIGNMENT: usize = 0x80;
 
 pub(crate) struct VramAllocator {
-    inner: Talck<spin::Mutex<()>, ErrOnOom>,
+    inner: Talck<RawMutex, ErrOnOom>,
 }
 
 pub(crate) static ALLOCATOR: VramAllocator = VramAllocator {

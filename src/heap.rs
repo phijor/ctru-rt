@@ -5,7 +5,7 @@
 use crate::os::reslimit::process_limits;
 use crate::os::PseudoHandle;
 use crate::result::ERROR_OUT_OF_MEMORY;
-// use crate::sync::OsMutex;
+use crate::sync::arbitrate::RawMutex;
 use crate::{early_debug, os::mem, result::Result, svc};
 
 use core::alloc::Allocator;
@@ -25,8 +25,7 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 }
 
 #[global_allocator]
-// pub(crate) static ALLOCATOR: Talck<OsMutex, ErrOnOom> = talc::Talc::new(ErrOnOom).lock();
-pub(crate) static ALLOCATOR: Talck<spin::Mutex<()>, ErrOnOom> = talc::Talc::new(ErrOnOom).lock();
+pub(crate) static ALLOCATOR: Talck<RawMutex, ErrOnOom> = talc::Talc::new(ErrOnOom).lock();
 
 /// Allocator for *linear* memory.
 ///
@@ -46,6 +45,8 @@ pub mod linear {
 
     use talc::{ErrOnOom, Talc, Talck};
 
+    use crate::sync::arbitrate::RawMutex;
+
     /// Recommended alignment for allocations in linear memory.
     ///
     /// Callers are expected to build their [`Layout`] with this alignment.
@@ -53,7 +54,7 @@ pub mod linear {
     pub const ALIGNMENT: usize = 0x80;
 
     pub struct LinearAllocator {
-        inner: Talck<spin::Mutex<()>, ErrOnOom>,
+        inner: Talck<RawMutex, ErrOnOom>,
     }
 
     pub static ALLOCATOR: LinearAllocator = LinearAllocator {
