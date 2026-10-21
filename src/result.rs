@@ -413,3 +413,11 @@ pub const ERROR_INVALID_HANDLE: ErrorCode = ErrorCode::new(
     Module::Os,
     CommonDescription::InvalidHandle as u32,
 );
+
+/// Some resource was initialized twice.
+pub const ERROR_ALREADY_INITIALIZED: ErrorCode = ErrorCode::new(
+    Level::Permanent,
+    Summary::InvalidState,
+    Module::Application,
+    CommonDescription::AlreadyInitialized as u32,
+);
