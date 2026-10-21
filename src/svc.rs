@@ -11,7 +11,7 @@ use crate::{
         BorrowedHandle, OwnedHandle, RawHandle,
     },
     result::Result,
-    sync::{ArbitrationType, ResetType},
+    sync::{arbitrate::ArbitrationType, ResetType},
 };
 
 use core::arch::asm;

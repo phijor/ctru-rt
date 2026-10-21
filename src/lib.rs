@@ -60,6 +60,7 @@ global_asm! {
 
 #[no_mangle]
 unsafe extern "C" fn _ctru_rt_start() {
+    crate::sync::arbitrate::init().expect("Failed to create address arbiter");
     crate::heap::init().expect("Failed to initialize heap");
     crate::early_debug!("Mapped heap.");
     crate::graphics::vram::init().expect("Failed to initialize VRAM allocator");
