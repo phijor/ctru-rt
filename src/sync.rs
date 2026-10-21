@@ -93,6 +93,26 @@ impl AtomicHandle {
         BorrowedHandle::new(raw_handle)
     }
 
+    /// Store `handle` if no handle is stored yet, taking ownership of it.
+    ///
+    /// Returns the stored handle on success.  If a handle is already stored, `handle` is handed
+    /// back to the caller unchanged; dropping it closes it.
+    fn try_set(
+        &self,
+        handle: OwnedHandle,
+    ) -> core::result::Result<BorrowedHandle<'_>, OwnedHandle> {
+        match self.0.compare_exchange(
+            CLOSED_HANDLE,
+            handle.as_raw_handle(),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            // Consume the new handle, do not run its destructor.
+            Ok(_closed_handle) => Ok(BorrowedHandle::new(handle.leak())),
+            Err(_old_handle) => Err(handle),
+        }
+    }
+
     #[cold]
     fn init<'handle, F: FnOnce() -> OwnedHandle>(
         &'handle self,
@@ -109,33 +129,26 @@ impl AtomicHandle {
             new_handle.as_raw_handle()
         );
 
-        let new_handle: BorrowedHandle<'handle> = match self.0.compare_exchange(
-            CLOSED_HANDLE,
-            new_handle.as_raw_handle(),
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
-            Ok(_closed_handle) => {
-                // Consume the new handle, do not run its destructor.
-                let raw_handle: u32 = new_handle.leak();
+        match self.try_set(new_handle) {
+            Ok(new_handle) => {
                 early_debug!(
                     "AtomicHandle::init(new_handle={:08x}): Won the race, emplaced new_handle.",
-                    raw_handle
+                    new_handle.handle
                 );
-                BorrowedHandle::new(raw_handle)
+                new_handle
             }
-            Err(old_handle) => {
+            Err(new_handle) => {
+                // A stored handle is never replaced, so it is safe to read it again.
+                let old_handle = self.get();
                 early_debug!(
                     "AtomicHandle::init(new_handle={:08x}, old_handle={:08x}): Lost the race, already initialized",
                     new_handle.as_raw_handle(),
-                    old_handle
+                    old_handle.handle
                 );
                 drop(new_handle);
-                BorrowedHandle::new(old_handle)
+                old_handle
             }
-        };
-
-        new_handle
+        }
     }
 
     fn get_or_init<F: FnOnce() -> OwnedHandle>(&self, init: F) -> BorrowedHandle<'_> {
