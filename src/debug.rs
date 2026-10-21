@@ -103,14 +103,24 @@ macro_rules! early_debug {
 
             write()
         }
+
+        // Mark the arguments as used without evaluating them, so variables that only exist to be
+        // logged do not trigger `unused_variables` in release builds.
+        #[cfg(not(debug_assertions))]
+        if false {
+            let _ = core::format_args!($fmt, $($args),*);
+        }
     };
 
     ($fmt: expr, $($args: expr),*) => {
-        early_debug!($fmt, $($args,)*)
+        $crate::early_debug!($fmt, $($args,)*)
     };
 
     ($fmt: expr) => {
-        $crate::svc::output_debug_string($fmt);
+        #[cfg(debug_assertions)]
+        {
+            $crate::svc::output_debug_string($fmt);
+        }
     }
 }
 
