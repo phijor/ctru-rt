@@ -49,11 +49,28 @@ zero_bss:
     b zero_bss
 end_zero_bss:
 
+	@ Switch to our own stack: The Homebrew Launcher only gives the main thread 4 KiB.
+	@ Keep the original stack pointer in r5 (callee-saved) to restore it before returning.
+	mov r5, sp
+	ldr sp, =__main_stack_top
+
 	@ Jump to user code
 	bl _ctru_rt_start
+
+	@ Restore the original stack
+	mov sp, r5
 	@ Return to saved address if we are running from homebrew
 	ldr r0, __service_ptr
 	cmp r0, #0
 	bxne  r4
 	@ Exit process otherwise
 	svc 0x03
+
+@---------------------------------------------------------------------------------
+@ Stack of the main thread, zeroed together with the rest of .bss
+@---------------------------------------------------------------------------------
+	.section ".bss.main_stack","aw",%nobits
+	.align 3 @ AAPCS: sp must be 8-byte aligned at public interfaces
+__main_stack_bottom:
+	.space 64*1024
+__main_stack_top:
