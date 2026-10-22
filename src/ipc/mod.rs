@@ -305,7 +305,17 @@ impl TranslateParameter for StaticBuffer<'_> {
 
         let header = (size << 14) | (index << 10) | TYPE_STATIC_BUFFER;
 
+        // If size == 0, explicitly pass a null pointer.
+        // A zero-sized slice might still point somewhere;
+        // prevent the kernel from accidentally accessing
+        // invalid memory.
+        let ptr: *const u32 = if size != 0 {
+            self.source.as_ptr()
+        } else {
+            core::ptr::null()
+        };
+
         cmdbuf.write(header);
-        cmdbuf.write(self.source.as_ptr() as u32)
+        cmdbuf.write(ptr as u32)
     }
 }
