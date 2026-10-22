@@ -59,9 +59,11 @@ end_zero_bss:
 
 	@ Restore the original stack
 	mov sp, r5
-	@ Return to saved address if we are running from homebrew
+	@ Return to saved address if we are running from homebrew and there is one.
+	@ Luma's 3dsx loader sets __service_ptr but starts the process fresh with lr = 0.
 	ldr r0, __service_ptr
 	cmp r0, #0
+	cmpne r4, #0
 	bxne  r4
 	@ Exit process otherwise
 	svc 0x03
