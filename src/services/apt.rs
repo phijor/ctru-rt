@@ -7,7 +7,7 @@ use core::ops::Deref;
 
 use num_enum::IntoPrimitive;
 
-use crate::ipc::{IpcParameter, IpcRequest};
+use crate::ipc::{IpcParameter, IpcRequest, StaticBuffer};
 use crate::os::{AsHandle, BorrowedHandle, OwnedHandle};
 use crate::ports::srv::Srv;
 use crate::result::Result;
@@ -85,6 +85,55 @@ impl<'access, 'srv> Apt<'access, 'srv> {
     fn enable(&self, attributes: AppletAttributes) -> Result<()> {
         let _ = IpcRequest::command(0x03)
             .parameter(attributes)
+            .dispatch(&self.handle)?;
+        Ok(())
+    }
+
+    fn finalize(&self, app_id: AppId) -> Result<()> {
+        let _ = IpcRequest::command(0x04)
+            .parameter(app_id)
+            .dispatch(&self.handle)?;
+        Ok(())
+    }
+
+    fn is_registered(&self, app_id: AppId) -> Result<bool> {
+        let mut reply = IpcRequest::command(0x09)
+            .parameter(app_id)
+            .dispatch(&self.handle)?;
+        let is_registered = reply.read_word() != 0;
+
+        Ok(is_registered)
+    }
+
+    fn prepare_to_close_application(&self, cancel_preload: bool) -> Result<()> {
+        let _ = IpcRequest::command(0x22)
+            .parameter(cancel_preload as u32)
+            .dispatch(&self.handle)?;
+        Ok(())
+    }
+
+    fn close_application(&self, payload: &[u32], handle: BorrowedHandle) -> Result<()> {
+        let _ = IpcRequest::command(0x27)
+            .parameter(size_of_val(payload))
+            .translate_parameter(handle)
+            .translate_parameter(StaticBuffer::new(payload, 0))
+            .dispatch(&self.handle)?;
+        Ok(())
+    }
+
+    fn prepare_to_do_application_jump(
+        &self,
+        flags: u8,
+        program_id: u64,
+        media_type: u8,
+    ) -> Result<()> {
+        let _ = IpcRequest::command(0x31)
+            .parameters(&[
+                flags as u32,
+                program_id as u32,
+                (program_id >> 32) as u32,
+                media_type as u32,
+            ])
             .dispatch(&self.handle)?;
         Ok(())
     }
