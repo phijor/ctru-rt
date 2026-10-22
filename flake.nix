@@ -33,7 +33,11 @@
         {
           devShells.default = pkgs.mkShell {
             inputsFrom = [ self'.devShells.rust ];
-            packages = [ pkgs.azahar ];
+            packages = [
+              pkgs.azahar
+              pkgs.rustfmt
+              pkgs.rust-analyzer
+            ];
           };
         };
     };
