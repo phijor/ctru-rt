@@ -97,7 +97,10 @@ fn run() -> Result<()> {
         };
 
         match thread.join() {
-            Ok(val) => {
+            Ok(None) => {
+                info!("Thread {} panicked!", signaled_idx);
+            }
+            Ok(Some(val)) => {
                 info!("Thread {} returned {}.", signaled_idx, val);
             }
             Err(e) => {
@@ -109,7 +112,10 @@ fn run() -> Result<()> {
     if !threads.is_empty() {
         for (idx, thread) in threads.into_iter() {
             match thread.join() {
-                Ok(val) => {
+                Ok(None) => {
+                    info!("Thread {} panicked!", idx);
+                }
+                Ok(Some(val)) => {
                     info!("Lingering thread {} returned {}.", idx, val);
                 }
                 Err(e) => {

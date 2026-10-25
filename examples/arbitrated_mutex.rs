@@ -157,7 +157,7 @@ fn priority_test() -> Result<bool> {
             released
         })?;
 
-    let got_lock_after_release = high.join()?;
+    let got_lock_after_release = high.join()?.unwrap();
     low.join()?;
 
     Ok(got_lock_after_release)

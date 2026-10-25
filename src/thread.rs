@@ -2,7 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use core::cell::UnsafeCell;
 use core::fmt;
+use core::mem::MaybeUninit;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::early_debug;
 use crate::os::{AsHandle, OwnedHandle};
@@ -49,25 +52,63 @@ impl ThreadPacket {
 }
 
 #[derive(Debug)]
-struct ReturnValue<T>(*mut T);
+struct ReturnValue<T> {
+    is_set: AtomicBool,
+    value: UnsafeCell<MaybeUninit<T>>,
+}
 
 impl<T> ReturnValue<T> {
-    fn new(ptr: *mut T) -> Self {
-        Self(ptr)
+    fn new() -> Self {
+        Self {
+            is_set: AtomicBool::new(false),
+            value: UnsafeCell::new(MaybeUninit::uninit()),
+        }
     }
 
-    unsafe fn store(self, return_value: T) {
-        early_debug!("ReturnValue::store(ptr={:p})", &self.0);
-        core::ptr::write(self.0, return_value)
+    fn is_set(&self) -> bool {
+        self.is_set.load(Ordering::Acquire)
+    }
+
+    unsafe fn read(&self) -> Option<T> {
+        if !self.is_set() {
+            return None;
+        }
+
+        let value = unsafe { (*self.value.get()).assume_init_read() };
+        Some(value)
+    }
+
+    unsafe fn store(&self, return_value: T) {
+        (*self.value.get()).write(return_value);
+        self.is_set.store(true, Ordering::Release);
     }
 }
 
-unsafe impl<T> Send for ReturnValue<T> where T: Send + 'static {}
+struct ReturnValuePtr<T>(*mut ReturnValue<T>);
+unsafe impl<T> Send for ReturnValuePtr<T> where T: Send + 'static {}
+
+impl<T> Copy for ReturnValuePtr<T> {}
+impl<T> Clone for ReturnValuePtr<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> ReturnValuePtr<T> {
+    unsafe fn new(ptr: *mut ReturnValue<T>) -> Self {
+        ptr.write(ReturnValue::new());
+        Self(ptr)
+    }
+
+    unsafe fn store(&self, return_value: T) {
+        (*self.0).store(return_value)
+    }
+}
 
 struct ThreadMemory<T> {
     allocated: *mut u8,
     stack_top: *mut u8,
-    return_value: *mut T,
+    return_value: ReturnValuePtr<T>,
     layout: Layout,
 }
 
@@ -76,7 +117,7 @@ impl<T> fmt::Debug for ThreadMemory<T> {
         f.debug_struct("ThreadMemory")
             .field("allocate", &self.allocated)
             .field("stack_top", &self.stack_top)
-            .field("return_value", &self.return_value)
+            .field("return_value", &self.return_value.0)
             .field("layout", &self.layout)
             .finish()
     }
@@ -90,13 +131,13 @@ impl<T> ThreadMemory<T> {
             .unwrap();
         let stack_size = layout.size();
 
-        let (layout, rv_offset) = layout.extend(Layout::new::<T>()).unwrap();
+        let (layout, rv_offset) = layout.extend(Layout::new::<ReturnValue<T>>()).unwrap();
         let layout = layout.pad_to_align();
 
         let allocated = unsafe { alloc::alloc::alloc(layout) };
 
         let stack_top = unsafe { allocated.add(stack_size) };
-        let return_value = unsafe { allocated.add(rv_offset) as *mut T };
+        let return_value = unsafe { ReturnValuePtr::new(allocated.add(rv_offset) as *mut _) };
 
         Self {
             allocated,
@@ -122,13 +163,14 @@ impl<T> JoinHandle<T>
 where
     T: Send + 'static,
 {
-    pub fn join(self) -> Result<T> {
+    pub fn join(self) -> Result<Option<T>> {
         let Self { handle, memory } = self;
         svc::wait_synchronization(handle.as_handle(), Timeout::forever())?;
 
         // SAFETY: The thread using this memory exited.
         // We own the only pointer to the location of the return value.
-        let return_value = unsafe { memory.return_value.read() };
+        // If the thread did not set a return value (because it panicked, for example), then this will be None.
+        let return_value = unsafe { (*memory.return_value.0).read() };
 
         // SAFETY: The thread using this memory exited, so we have exclusive access and are free to
         // deallocate it.
@@ -141,6 +183,7 @@ where
         svc::wait_synchronization(self.handle.as_handle(), Timeout::none()).is_err()
     }
 }
+
 #[derive(Debug)]
 pub struct ThreadBuilder {
     priority: i32,
@@ -176,7 +219,7 @@ impl ThreadBuilder {
     {
         let thread_memory = ThreadMemory::allocate(self.stack_size);
 
-        let return_value = ReturnValue::new(thread_memory.return_value);
+        let return_value = thread_memory.return_value;
 
         let thread_main = move || unsafe {
             early_debug!("ThreadBuilder::spawn(): Entered main wrapper.");
@@ -189,7 +232,11 @@ impl ThreadBuilder {
 
         debug!(
             "Launching thread: priority={}, argument={:p}, mem_start={:p}, stack_top={:p}, return_value={:p}, processor_id={}",
-            self.priority, argument as *const (), thread_memory.allocated, thread_memory.stack_top, thread_memory.return_value, self.processor_id
+            self.priority, argument as *const (),
+            thread_memory.allocated,
+            thread_memory.stack_top,
+            &thread_memory.return_value,
+            self.processor_id,
         );
 
         let handle = unsafe {
