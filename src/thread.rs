@@ -201,7 +201,7 @@ impl Default for ThreadBuilder {
         Self {
             priority: 0x30,
             stack_size: 0x8000,
-            processor_id: -1,
+            processor_id: -2,
         }
     }
 }
