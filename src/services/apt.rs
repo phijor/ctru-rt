@@ -116,7 +116,7 @@ impl<'access, 'srv> Apt<'access, 'srv> {
         let _ = IpcRequest::command(0x27)
             .parameter(size_of_val(payload))
             .translate_parameter(handle)
-            .translate_parameter(StaticBuffer::new(payload, 0))
+            .translate_parameter(StaticBuffer::from_u32_slice(payload, 0))
             .dispatch(&self.handle)?;
         Ok(())
     }

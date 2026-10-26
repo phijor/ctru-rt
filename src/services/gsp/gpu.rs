@@ -741,10 +741,9 @@ fn write_graphics_register(
     register_offset: u32,
     value: &u32,
 ) -> Result<()> {
-    let data = core::slice::from_ref(value);
     let _ = IpcRequest::command(0x01)
         .parameters(&[register_offset, 4])
-        .translate_parameter(StaticBuffer::new(data, 0))
+        .translate_parameter(StaticBuffer::from_u32(value, 0))
         .dispatch(service_handle)?;
 
     Ok(())
@@ -756,12 +755,10 @@ fn write_graphics_register_masked(
     value: &u32,
     mask: &u32,
 ) -> Result<()> {
-    let value = core::slice::from_ref(value);
-    let mask = core::slice::from_ref(mask);
     let _ = IpcRequest::command(0x02)
         .parameters(&[register_offset, 4])
-        .translate_parameter(StaticBuffer::new(value, 0))
-        .translate_parameter(StaticBuffer::new(mask, 1))
+        .translate_parameter(StaticBuffer::from_u32(value, 0))
+        .translate_parameter(StaticBuffer::from_u32(mask, 1))
         .dispatch(service_handle)?;
 
     Ok(())

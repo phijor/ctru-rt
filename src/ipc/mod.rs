@@ -14,6 +14,7 @@ use crate::os::{BorrowedHandle, OwnedHandle, RawHandle};
 use crate::result::{ResultCode, ResultValue};
 use crate::tls;
 
+use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::{fmt, ops::Range};
 
@@ -277,13 +278,50 @@ impl TranslateParameter for ThisProcessId {
 
 #[derive(Debug)]
 pub(crate) struct StaticBuffer<'buf> {
-    source: &'buf [u32],
+    source: *const u8,
+    size: u32,
     target_id: u8,
+    _lifetime: PhantomData<&'buf [u8]>,
 }
 
 impl<'buf> StaticBuffer<'buf> {
-    pub(crate) fn new(source: &'buf [u32], target_id: u8) -> Self {
-        Self { source, target_id }
+    pub(crate) const fn new(source: &'buf [u8], target_id: u8) -> Self {
+        // The descriptor encodes the buffer size in *bytes* (max 0x3FFFF), not in
+        // elements.  See `IPC_Desc_StaticBuffer()` in libctru.
+        let size = core::mem::size_of_val(source);
+        let size = if size <= 0x3FFFF {
+            size as u32
+        } else {
+            panic!("Static buffer size must fit 18 bits");
+        };
+
+        let source = source.as_ptr();
+        Self {
+            source,
+            size,
+            target_id,
+            _lifetime: PhantomData,
+        }
+    }
+
+    pub(crate) const fn from_u32_slice(source: &'buf [u32], target_id: u8) -> Self {
+        let source = unsafe {
+            core::slice::from_raw_parts(source.as_ptr().cast::<u8>(), size_of_val(source))
+        };
+        Self::new(source, target_id)
+    }
+
+    pub(crate) const fn from_u32(value: &'buf u32, target_id: u8) -> Self {
+        Self::from_u32_slice(core::slice::from_ref(value), target_id)
+    }
+
+    pub(crate) const fn null(target_id: u8) -> Self {
+        Self {
+            source: core::ptr::null(),
+            size: 0,
+            target_id,
+            _lifetime: PhantomData,
+        }
     }
 }
 
@@ -295,22 +333,14 @@ impl TranslateParameter for StaticBuffer<'_> {
             panic!("Static buffer target index must be in 0..16, not {}", index);
         }
 
-        // The descriptor encodes the buffer size in *bytes* (max 0x3FFFF), not in
-        // elements.  See `IPC_Desc_StaticBuffer()` in libctru.
-        let size = core::mem::size_of_val(self.source);
-        if size > 0x3FFFF {
-            panic!("Static buffer size must fit 18 bits, not {}", size);
-        }
-        let size = size as u32;
-
-        let header = (size << 14) | (index << 10) | TYPE_STATIC_BUFFER;
+        let header = (self.size << 14) | (index << 10) | TYPE_STATIC_BUFFER;
 
         // If size == 0, explicitly pass a null pointer.
         // A zero-sized slice might still point somewhere;
         // prevent the kernel from accidentally accessing
         // invalid memory.
-        let ptr: *const u32 = if size != 0 {
-            self.source.as_ptr()
+        let ptr: *const u32 = if self.size != 0 {
+            self.source.cast::<u32>()
         } else {
             core::ptr::null()
         };
