@@ -1,7 +1,8 @@
+use alloc::{vec, vec::Vec};
 use core::{ffi::CStr, ops::BitOr};
 
 use crate::{
-    ipc::{IpcParameter, IpcRequest, StaticBuffer, ThisProcessId},
+    ipc::{IpcParameter, IpcRequest, MappedWritableBuffer, StaticBuffer, ThisProcessId},
     os::{AsHandle, OwnedHandle},
     ports::srv::Srv,
     result::Result,
@@ -252,7 +253,41 @@ impl IpcParameter for Attributes {
     }
 }
 
+pub type FileOffset = u64;
+
 #[derive(Debug)]
 pub struct File {
     handle: OwnedHandle,
+}
+
+impl File {
+    pub fn read(&self, buf: &mut [u8], offset: FileOffset) -> Result<usize> {
+        let offset_low = offset as u32;
+        let offset_high = (offset >> 32) as u32;
+
+        let mut reply = IpcRequest::command(0x802)
+            .parameter(offset_low)
+            .parameter(offset_high)
+            .parameter(size_of_val(buf))
+            .translate_parameter(MappedWritableBuffer::new(buf))
+            .dispatch(&self.handle)?;
+
+        Ok(reply.read_word() as usize)
+    }
+
+    pub fn read_vec(&self) -> Result<Vec<u8>> {
+        let size = self.size()?;
+        let mut buf = vec![0; size];
+
+        let bytes_read = self.read(&mut buf, 0)?;
+        buf.truncate(bytes_read);
+
+        Ok(buf)
+    }
+
+    pub fn size(&self) -> Result<usize> {
+        let mut reply = IpcRequest::command(0x804).dispatch(&self.handle)?;
+
+        Ok(reply.read_word() as usize)
+    }
 }
