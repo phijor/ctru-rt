@@ -16,6 +16,7 @@ use crate::tls;
 
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
+use core::ops::BitOr;
 use core::{fmt, ops::Range};
 
 #[derive(Copy, Clone)]
@@ -347,5 +348,60 @@ impl TranslateParameter for StaticBuffer<'_> {
 
         cmdbuf.write(header);
         cmdbuf.write(ptr as u32)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct MappedWritableBuffer<'buf> {
+    source: *mut u8,
+    size: u32,
+    _lifetime: PhantomData<&'buf mut [u8]>,
+}
+
+impl<'buf> MappedWritableBuffer<'buf> {
+    pub fn new(buf: &'buf mut [u8]) -> Self {
+        // Maximum buffer size (in bytes) is 0x0FFF_FFFF.
+        let size = core::mem::size_of_val(buf);
+        let size = if size <= 0x0FFF_FFFF {
+            size as u32
+        } else {
+            panic!("Static buffer size must fit 26 bits");
+        };
+
+        let source = buf.as_mut_ptr();
+
+        Self {
+            source,
+            size,
+            _lifetime: PhantomData,
+        }
+    }
+}
+
+impl TranslateParameter for MappedWritableBuffer<'_> {
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        let header = (self.size << 4) | 0b1000 | BufferRights::WRITE.0;
+
+        let ptr: *mut u32 = self.source.cast();
+
+        cmdbuf.write(header);
+        cmdbuf.write(ptr as u32);
+    }
+}
+
+#[derive(Debug)]
+pub struct BufferRights(u32);
+
+#[rustfmt::skip]
+impl BufferRights {
+    const READ:  Self = Self(0b010);
+    const WRITE: Self = Self(0b100);
+}
+
+impl BitOr for BufferRights {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
     }
 }
