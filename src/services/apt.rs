@@ -7,7 +7,7 @@ use core::ops::Deref;
 
 use num_enum::IntoPrimitive;
 
-use crate::ipc::{IpcParameter, IpcRequest, StaticBuffer};
+use crate::ipc::{CommandBufferWriter, IpcParameter, IpcRequest, StaticBuffer};
 use crate::os::{AsHandle, BorrowedHandle, OwnedHandle};
 use crate::ports::srv::Srv;
 use crate::result::Result;
@@ -37,8 +37,8 @@ impl AppletAttributes {
 }
 
 impl IpcParameter for AppletAttributes {
-    fn encode(&self) -> u32 {
-        self.0.into()
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(self.0.into())
     }
 }
 
@@ -236,7 +236,7 @@ enum AppPosition {
 }
 
 impl IpcParameter for AppId {
-    fn encode(&self) -> u32 {
-        *self as u16 as u32
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(*self as u16 as u32)
     }
 }

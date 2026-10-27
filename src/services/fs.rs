@@ -2,7 +2,10 @@ use alloc::{vec, vec::Vec};
 use core::{ffi::CStr, ops::BitOr};
 
 use crate::{
-    ipc::{IpcParameter, IpcRequest, MappedWritableBuffer, StaticBuffer, ThisProcessId},
+    ipc::{
+        CommandBufferWriter, IpcParameter, IpcRequest, MappedWritableBuffer, StaticBuffer,
+        ThisProcessId,
+    },
     os::{AsHandle, OwnedHandle},
     ports::srv::Srv,
     result::Result,
@@ -54,15 +57,11 @@ impl Fs {
     ) -> Result<File> {
         const TRANSACTION: u32 = 0;
 
-        let handle_low = archive.0 as u32;
-        let handle_high = (archive.0 >> 32) as u32;
-
         let (buffer, size) = path.as_static_buffer(0);
 
         let result = IpcRequest::command(0x802)
             .parameter(TRANSACTION)
-            .parameter(handle_low)
-            .parameter(handle_high)
+            .parameter(archive.0)
             .parameter(path.kind)
             .parameter(size)
             .parameter(flags)
@@ -102,8 +101,8 @@ enum PathKind {
 }
 
 impl IpcParameter for PathKind {
-    fn encode(&self) -> u32 {
-        *self as u32
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(*self as u32)
     }
 }
 
@@ -198,8 +197,8 @@ impl BitOr for OpenFlags {
 }
 
 impl IpcParameter for OpenFlags {
-    fn encode(&self) -> u32 {
-        self.0
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(self.0)
     }
 }
 
@@ -211,8 +210,8 @@ impl ArchiveId {
 }
 
 impl IpcParameter for ArchiveId {
-    fn encode(&self) -> u32 {
-        self.0
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(self.0)
     }
 }
 
@@ -248,8 +247,8 @@ impl BitOr for Attributes {
 }
 
 impl IpcParameter for Attributes {
-    fn encode(&self) -> u32 {
-        self.0
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(self.0)
     }
 }
 
@@ -262,12 +261,8 @@ pub struct File {
 
 impl File {
     pub fn read(&self, buf: &mut [u8], offset: FileOffset) -> Result<usize> {
-        let offset_low = offset as u32;
-        let offset_high = (offset >> 32) as u32;
-
         let mut reply = IpcRequest::command(0x802)
-            .parameter(offset_low)
-            .parameter(offset_high)
+            .parameter(offset)
             .parameter(size_of_val(buf))
             .translate_parameter(MappedWritableBuffer::new(buf))
             .dispatch(&self.handle)?;

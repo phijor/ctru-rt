@@ -80,8 +80,9 @@ impl IpcRequest<state::Normal> {
     where
         P: IpcParameter,
     {
-        self.cmdbuf.write(parameter.encode());
-        self.param_words += 1;
+        let before = self.cmdbuf.pos();
+        parameter.encode(&mut self.cmdbuf);
+        self.param_words += (self.cmdbuf.pos() - before) as u32;
         self
     }
 
@@ -90,10 +91,11 @@ impl IpcRequest<state::Normal> {
     where
         P: IpcParameter,
     {
+        let before = self.cmdbuf.pos();
         for parameter in parameters {
-            self.cmdbuf.write(parameter.encode());
+            parameter.encode(&mut self.cmdbuf);
         }
-        self.param_words += parameters.len() as u32;
+        self.param_words += (self.cmdbuf.pos() - before) as u32;
         self
     }
 }

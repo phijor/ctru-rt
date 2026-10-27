@@ -7,8 +7,7 @@ mod reply;
 mod request;
 
 use self::reply::CommandBufferReader;
-use self::request::CommandBufferWriter;
-pub(crate) use self::request::IpcRequest;
+pub(crate) use self::request::{CommandBufferWriter, IpcRequest};
 
 use crate::os::{BorrowedHandle, OwnedHandle, RawHandle};
 use crate::result::{ResultCode, ResultValue};
@@ -118,7 +117,7 @@ mod state {
 
 pub(crate) trait IpcParameter {
     #[doc(hidden)]
-    fn encode(&self) -> u32;
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter);
 }
 
 pub(crate) trait IpcResult {
@@ -138,8 +137,16 @@ pub(crate) trait TranslateResult {
 
 impl IpcParameter for u32 {
     #[inline(always)]
-    fn encode(&self) -> u32 {
-        *self
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(*self)
+    }
+}
+
+impl IpcParameter for u64 {
+    #[inline(always)]
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(*self as u32);
+        cmdbuf.write((*self >> 32) as u32);
     }
 }
 
@@ -152,15 +159,15 @@ impl IpcResult for u32 {
 
 impl IpcParameter for usize {
     #[inline(always)]
-    fn encode(&self) -> u32 {
-        *self as u32
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(*self as u32)
     }
 }
 
 impl IpcParameter for ResultCode {
     #[inline(always)]
-    fn encode(&self) -> u32 {
-        self.value()
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(self.value())
     }
 }
 
