@@ -7,5 +7,6 @@ pub mod apt;
 pub mod gsp;
 pub mod hid;
 pub mod soc;
+pub mod fs;
 
 pub trait Service: Default {}
