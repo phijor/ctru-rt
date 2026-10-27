@@ -5,7 +5,7 @@
 use crate::ports::srv::Srv;
 use crate::{
     heap::PageAlignedBuffer,
-    ipc::{CommandBufferWriter, IpcParameter, IpcRequest, IpcResult, ThisProcessId},
+    ipc::{CommandBufferWriter, IpcRequest, IpcResult, Parameter, ThisProcessId},
     os::{mem::MemoryPermission, AsHandle, OwnedHandle},
     result::{ErrorCode as SystemErrorCode, Result as SystemResult},
     svc, tls,
@@ -179,7 +179,7 @@ pub struct PosixErrorCode(NonZeroU32);
 #[derive(Debug)]
 pub struct SocketFd<'s>(u32, PhantomData<&'s u32>);
 
-impl<'s> IpcParameter for &SocketFd<'s> {
+impl<'s> Parameter for &SocketFd<'s> {
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(self.0)
     }

@@ -3,7 +3,7 @@ use core::{ffi::CStr, ops::BitOr};
 
 use crate::{
     ipc::{
-        CommandBufferWriter, IpcParameter, IpcRequest, MappedWritableBuffer, StaticBuffer,
+        CommandBufferWriter, IpcRequest, MappedWritableBuffer, Parameter, StaticBuffer,
         ThisProcessId,
     },
     os::{AsHandle, OwnedHandle},
@@ -100,7 +100,7 @@ enum PathKind {
     Utf16,
 }
 
-impl IpcParameter for PathKind {
+impl Parameter for PathKind {
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(*self as u32)
     }
@@ -196,7 +196,7 @@ impl BitOr for OpenFlags {
     }
 }
 
-impl IpcParameter for OpenFlags {
+impl Parameter for OpenFlags {
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(self.0)
     }
@@ -209,7 +209,7 @@ impl ArchiveId {
     pub const SHARED_EXT_SAVEDATA: Self = Self(0x0000_0007);
 }
 
-impl IpcParameter for ArchiveId {
+impl Parameter for ArchiveId {
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(self.0)
     }
@@ -246,7 +246,7 @@ impl BitOr for Attributes {
     }
 }
 
-impl IpcParameter for Attributes {
+impl Parameter for Attributes {
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(self.0)
     }

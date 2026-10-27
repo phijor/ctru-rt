@@ -115,7 +115,7 @@ mod state {
     state!(Normal, Translate);
 }
 
-pub(crate) trait IpcParameter {
+pub(crate) trait Parameter {
     #[doc(hidden)]
     fn encode(&self, cmdbuf: &mut CommandBufferWriter);
 }
@@ -135,14 +135,14 @@ pub(crate) trait TranslateResult {
     unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self;
 }
 
-impl IpcParameter for u32 {
+impl Parameter for u32 {
     #[inline(always)]
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(*self)
     }
 }
 
-impl IpcParameter for u64 {
+impl Parameter for u64 {
     #[inline(always)]
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(*self as u32);
@@ -157,14 +157,14 @@ impl IpcResult for u32 {
     }
 }
 
-impl IpcParameter for usize {
+impl Parameter for usize {
     #[inline(always)]
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(*self as u32)
     }
 }
 
-impl IpcParameter for ResultCode {
+impl Parameter for ResultCode {
     #[inline(always)]
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(self.value())

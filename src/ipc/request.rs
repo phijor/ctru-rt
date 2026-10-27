@@ -7,7 +7,7 @@ use crate::result::{Result, ResultCode};
 use crate::svc;
 
 use super::reply::IpcReply;
-use super::{state, CommandBuffer, IpcHeader, IpcParameter, TranslateParameter};
+use super::{state, CommandBuffer, IpcHeader, Parameter, TranslateParameter};
 
 use core::marker::PhantomData;
 
@@ -78,7 +78,7 @@ impl IpcRequest<state::Normal> {
     #[inline]
     pub fn parameter<P>(mut self, parameter: P) -> Self
     where
-        P: IpcParameter,
+        P: Parameter,
     {
         let before = self.cmdbuf.pos();
         parameter.encode(&mut self.cmdbuf);
@@ -89,7 +89,7 @@ impl IpcRequest<state::Normal> {
     #[inline]
     pub fn parameters<P, const N: usize>(mut self, parameters: &[P; N]) -> Self
     where
-        P: IpcParameter,
+        P: Parameter,
     {
         let before = self.cmdbuf.pos();
         for parameter in parameters {
