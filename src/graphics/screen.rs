@@ -13,8 +13,8 @@ use super::framebuffer::{Allocator, ColorFormat, Framebuffer, Linear};
 pub(super) struct SwapChain<A: Allocator> {
     format: ColorFormat,
     pub(super) dimensions: ScreenDimensions,
-    fb0: Framebuffer<A>,
-    fb1: Framebuffer<A>,
+    /// Framebuffers, indexed by [`FramebufferIndex`].
+    fb: [Framebuffer<A>; 2],
     active_fb: FramebufferIndex,
 }
 
@@ -23,14 +23,15 @@ impl<A: Allocator> SwapChain<A> {
         dimensions: ScreenDimensions,
         format: ColorFormat,
     ) -> core::result::Result<Self, AllocError> {
-        let fb0 = Framebuffer::new(dimensions, format)?;
-        let fb1 = Framebuffer::new(dimensions, format)?;
+        let fb = [
+            Framebuffer::new(dimensions, format)?,
+            Framebuffer::new(dimensions, format)?,
+        ];
 
         Ok(Self {
             format,
             dimensions,
-            fb0,
-            fb1,
+            fb,
             active_fb: FramebufferIndex::First,
         })
     }
@@ -68,17 +69,11 @@ impl<A: Allocator> SwapChain<A> {
     }
 
     fn buffer_at(&self, index: FramebufferIndex) -> &Framebuffer<A> {
-        match index {
-            FramebufferIndex::First => &self.fb0,
-            FramebufferIndex::Second => &self.fb1,
-        }
+        &self.fb[usize::from(u8::from(index))]
     }
 
     fn buffer_at_mut(&mut self, index: FramebufferIndex) -> &mut Framebuffer<A> {
-        match index {
-            FramebufferIndex::First => &mut self.fb0,
-            FramebufferIndex::Second => &mut self.fb1,
-        }
+        &mut self.fb[usize::from(u8::from(index))]
     }
 
     fn active_buffer(&self) -> &Framebuffer<A> {
