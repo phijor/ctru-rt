@@ -154,14 +154,27 @@ impl Graphics<'_, Linear> {
             .pixels_rgb_mut())
     }
 
-    pub fn set_pixel_rgb(&mut self, screen: Screen, x: u16, y: u16, pixel: [u8; 3]) {
+    /// Set the pixel at _(x, y)_ in the off-screen buffer of the selected screen.
+    ///
+    /// The origin _(0, 0)_ is the bottom-left corner, _x_ grows to the right and _y_ grows upwards.
+    /// Pixels outside of the screen are ignored.
+    pub fn set_pixel_rgb(&mut self, screen: Screen, x: usize, y: usize, pixel: [u8; 3]) {
         let swap_chain = self.swap_chain_mut(screen);
-        let offset = x * swap_chain.dimensions.width + y;
+        // Framebuffers are stored rotated: each line of [`ScreenDimensions::width`] pixels is a
+        // column of the screen, running from bottom to top.
+        let column_len = usize::from(swap_chain.dimensions.width);
+        let columns = usize::from(swap_chain.dimensions.height);
+
+        if x >= columns || y >= column_len {
+            return;
+        }
+
+        let offset = x * column_len + y;
 
         if let Some(target) = swap_chain
             .inactive_buffer_mut()
             .pixels_rgb_mut()
-            .get_mut(usize::from(offset))
+            .get_mut(offset)
         {
             *target = pixel;
         }

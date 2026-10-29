@@ -37,6 +37,11 @@ fn run() -> Result<()> {
 
     let hid = Hid::init(&srv)?;
 
+    // Framebuffers are stored as `height` lines of `width` pixels each, rotated: `x` picks
+    // the line, `y` the pixel within it.
+    let top = *gfx.dimensions(Screen::Top);
+    let (top_right_x, top_right_y) = ((top.height - 1) as usize, (top.width - 1) as usize);
+
     let mut color: u8 = 0;
     let mut rng = 0x1234_5678u32;
     info!("Press START to exit");
@@ -44,6 +49,9 @@ fn run() -> Result<()> {
         // Draw into the off-screen buffer, publish it, then wait for the scanout to pick it
         // up.  `swap_buffers` flushes the data cache, so the GPU sees what we just wrote.
         gfx.fill_screen_rgb(Screen::Top, [color, color + 0x50, color + 0xa0]);
+        // Mark the bottom-left (black) and top-right (white) corners of the top screen.
+        gfx.set_pixel_rgb(Screen::Top, 0, 0, [0x00, 0x00, 0x00]);
+        gfx.set_pixel_rgb(Screen::Top, top_right_x, top_right_y, [0xff, 0xff, 0xff]);
         gfx.with_pixels_rgb_mut(Screen::Bottom, |pixels| {
             for pixel in pixels {
                 rng = rng.wrapping_mul(0x41C64E6D).wrapping_add(0x00006073);
