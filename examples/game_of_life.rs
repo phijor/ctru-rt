@@ -13,7 +13,7 @@ use alloc::{boxed::Box, vec};
 
 use ctru_rt::{
     entry,
-    graphics::{FramebufferAllocator, Graphics},
+    graphics::Graphics,
     ports::srv::Srv,
     result::Result,
     services::{
@@ -28,8 +28,6 @@ use log::{error, info};
 fn panic_handler(info: &PanicInfo) -> ! {
     ctru_rt::panic::user_break(info)
 }
-
-const FRAMEBUFFER_ALLOCATOR: FramebufferAllocator = FramebufferAllocator::Linear;
 
 /// One word of cell storage, holding `WORD_BITS` cells.
 type Word = usize;
@@ -238,8 +236,7 @@ fn run() -> Result<()> {
 
     let mut gpu = Gpu::init(&srv)?;
 
-    use ctru_rt::graphics::FramebufferColorFormat::RGB8;
-    let mut gfx = Graphics::init(&mut gpu, RGB8, RGB8, FRAMEBUFFER_ALLOCATOR)?;
+    let mut gfx = Graphics::init_default(&mut gpu)?;
 
     let hid = Hid::init(&srv)?;
 

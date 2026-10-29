@@ -2,9 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-pub(crate) mod vram;
-
 use core::alloc::AllocError;
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 use crate::heap::linear;
@@ -40,189 +39,179 @@ impl FramebufferColorFormat {
 #[derive(Debug)]
 struct FramebufferFormat(u16);
 
-/// A memory allocator for framebuffers
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FramebufferAllocator {
-    /// Dedicated video memory.
-    ///
-    /// Forwards to [`vram`].
-    Vram,
-    /// Linear (physically contiguous) main memory.
-    ///
-    /// Forwards to [`linear`].
-    Linear,
+mod sealed {
+    use super::*;
+
+    /// The operations behind [`FramebufferAllocator`].
+    pub trait FramebufferAllocator {
+        /// Alignment framebuffers in this region have to be allocated with.
+        const ALIGNMENT: usize;
+
+        /// Bits 8..=9 of the framebuffer mode word. These tell GSP where the buffer lives.
+        const MODE_BITS: u32;
+
+        fn allocate(layout: Layout) -> core::result::Result<NonNull<[u8]>, AllocError>;
+
+        /// # Safety
+        ///
+        /// `ptr` and `layout` must come from a matching [`Self::allocate`] call.
+        unsafe fn deallocate(ptr: NonNull<u8>, layout: Layout);
+
+        /// Bring a freshly allocated framebuffer into a defined state.
+        fn initialize(buffer: NonNull<[u8]>);
+
+        /// Make all writes to `buffer` visible to the GPU.
+        fn flush(buffer: NonNull<[u8]>, gpu: &mut Gpu) -> Result<()>;
+    }
 }
 
-impl FramebufferAllocator {
-    fn allocate(&self, layout: Layout) -> core::result::Result<NonNull<[u8]>, AllocError> {
-        match self {
-            Self::Vram => vram::ALLOCATOR.allocate(layout),
-            Self::Linear => linear::ALLOCATOR.allocate(layout),
-        }
+/// A memory region framebuffers can be allocated in.
+///
+/// This trait is sealed: currently, [`Linear`] is the only implementation.
+///
+/// In the future, framebuffers in VRAM might be supported.  For this to work the GPS memory fill
+/// and transfer commands need to be implemented.  Without those it is not possible to write to VRAM
+/// at all (the CPU does not have write access to VRAM).
+pub trait FramebufferAllocator: sealed::FramebufferAllocator {}
+
+/// Linear (physically contiguous) main memory.
+///
+/// Forwards to [`linear`].  The CPU can write framebuffers in linear memory directly.
+#[derive(Debug)]
+pub enum Linear {}
+
+impl FramebufferAllocator for Linear {}
+
+impl sealed::FramebufferAllocator for Linear {
+    const ALIGNMENT: usize = linear::ALIGNMENT;
+    const MODE_BITS: u32 = 0b01 << 8;
+
+    fn allocate(layout: Layout) -> core::result::Result<NonNull<[u8]>, AllocError> {
+        linear::ALLOCATOR.allocate(layout)
     }
 
-    /// # Safety
+    unsafe fn deallocate(ptr: NonNull<u8>, layout: Layout) {
+        unsafe { linear::ALLOCATOR.deallocate(ptr, layout) }
+    }
+
+    fn initialize(mut buffer: NonNull<[u8]>) {
+        // SAFETY: `buffer` points at a fresh allocation of `buffer.len()` bytes.
+        unsafe { buffer.as_mut() }.fill(0xff);
+    }
+
+    /// Issues the data synchronization barrier ([`sync::mem::data_sync_barrier`]) that orders all
+    /// preceeding writes to the framebuffer before the cache maintenance operation, then issues a
+    /// [`Gpu::flush_data_cache`] IPC command to `GSP:GPU` to write the dirty cache lines back to
+    /// memory.
     ///
-    /// `ptr` and `layout` must come from a matching [`Self::allocate`] on the same variant.
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        match self {
-            Self::Vram => unsafe { vram::ALLOCATOR.deallocate(ptr, layout) },
-            Self::Linear => unsafe { linear::ALLOCATOR.deallocate(ptr, layout) },
-        }
-    }
-
-    /// Alignment framebuffers in this region have to be allocated with.
-    const fn alignment(&self) -> usize {
-        match self {
-            Self::Vram => vram::ALIGNMENT,
-            Self::Linear => linear::ALIGNMENT,
-        }
-    }
-
-    /// Bits 8..=9 of the framebuffer mode word, telling GSP where the buffer lives.
-    const fn mode_bits(&self) -> u32 {
-        match self {
-            Self::Vram => 0b11 << 8,
-            Self::Linear => 0b01 << 8,
-        }
+    /// [`sync::mem::data_sync_barrier`]: crate::sync::mem::data_sync_barrier
+    fn flush(buffer: NonNull<[u8]>, gpu: &mut Gpu) -> Result<()> {
+        crate::sync::mem::data_sync_barrier();
+        gpu.flush_data_cache(buffer.cast().as_ptr(), buffer.len())
     }
 }
 
 #[derive(Debug)]
-struct Framebuffer {
-    buffer: Option<NonNull<[u8]>>,
+struct Framebuffer<A: FramebufferAllocator> {
+    buffer: NonNull<[u8]>,
     /// Layout [`Self::buffer`] was allocated with.
     ///
     /// Kept so that [`Drop`] frees the buffer with exactly the layout it was allocated with.
     /// The allocator may hand back a slice longer than requested, so the length of `buffer` is
     /// not a safe substitute.
     layout: Layout,
-    format: FramebufferColorFormat,
-    allocator: FramebufferAllocator,
+    _allocator: PhantomData<A>,
 }
 
-impl Framebuffer {
-    /// Layout a framebuffer of `size` bytes in `region` is allocated with.
+impl<A: FramebufferAllocator> Framebuffer<A> {
+    /// Layout a framebuffer of `size` bytes is allocated with.
     ///
     /// The alignment the region requires is baked in here rather than inside the allocators, so
     /// that [`Drop`] can free a buffer with exactly the layout it was allocated with.
-    fn layout_for_size(size: usize, region: FramebufferAllocator) -> Layout {
-        Layout::from_size_align(size, region.alignment()).unwrap()
+    fn layout_for_size(size: usize) -> Layout {
+        Layout::from_size_align(size, A::ALIGNMENT).unwrap()
     }
 
     fn new(
         dimensions: ScreenDimensions,
         format: FramebufferColorFormat,
-        allocator: FramebufferAllocator,
     ) -> core::result::Result<Self, AllocError> {
         let size = usize::from(dimensions.width)
             * usize::from(dimensions.height)
             * format.bytes_per_pixel();
         debug!(
-            "Allocating new framebuffer (size = {:#0x}, allocator = {:?})",
-            size, allocator
+            "Allocating new framebuffer (size = {:#0x}, allocator = {})",
+            size,
+            core::any::type_name::<A>()
         );
-        let layout = Self::layout_for_size(size, allocator);
-        let buffer = allocator.allocate(layout)?;
+        let layout = Self::layout_for_size(size);
+        let buffer = A::allocate(layout)?;
 
         debug!("New framebuffer: {:p}", buffer);
 
-        let mut fb = Self {
-            buffer: Some(buffer),
-            layout,
-            format,
-            allocator,
-        };
-        fb.fill(0xff);
+        A::initialize(buffer);
 
-        Ok(fb)
+        Ok(Self {
+            buffer,
+            layout,
+            _allocator: PhantomData,
+        })
     }
 
     pub(crate) fn as_ptr(&self) -> *const u8 {
-        match self.buffer {
-            Some(buffer) => buffer.cast().as_ptr(),
-            None => core::ptr::null(),
-        }
+        self.buffer.cast().as_ptr()
     }
 
-    /// Write this framebuffer's dirty cache lines back to memory.
-    ///
-    /// Issues the data synchronization barrier ([`sync::mem::data_sync_barrier`]) that orders all
-    /// preceeding writes to the framebuffer before the cache maintenance operation.
-    ///
-    /// If the framebuffer is located in linear memory ([`FramebufferAllocator::Linear`]), it then
-    /// issues a [`Gpu::flush_data_cache`] IPC command to `GSP:GPU` to make framebuffer changes
-    /// visible to the GPU.
-    ///
-    /// For framebuffers in VRAM ([`FramebufferAllocator::Vram`]), no IPC command is issued: the
-    /// `GSP` service refuses to flush data caches outside of linear memory.  The data
-    /// synchronization barrier is still needed there, since VRAM is write-combined and pixel writes
-    /// may still sit in the write buffer.
+    /// Make this framebuffer's contents visible to the GPU.
     fn flush(&self, gpu: &mut Gpu) -> Result<()> {
-        crate::sync::mem::data_sync_barrier();
-
-        if let FramebufferAllocator::Vram = self.allocator {
-            return Ok(());
-        }
-
-        match self.buffer {
-            Some(buffer) => gpu.flush_data_cache(buffer.cast().as_ptr(), buffer.len()),
-            None => Ok(()),
-        }
+        A::flush(self.buffer, gpu)
     }
+}
 
-    /// Run `f` on this framebuffer's memory, if it is allocated.
-    #[inline]
-    fn with_mut<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut NonNull<[u8]>),
-    {
-        if let Some(mut buffer) = self.buffer {
-            f(&mut buffer);
-        }
+impl Framebuffer<Linear> {
+    fn as_mut_slice(&mut self) -> &mut [u8] {
+        // SAFETY: `buffer` points at an allocation of `buffer.len()` bytes owned by `self`, and
+        // the CPU can write linear memory.
+        unsafe { self.buffer.as_mut() }
     }
 
     /// Fill the framebuffer with a fixed byte value
     fn fill(&mut self, value: u8) {
-        self.with_mut(|buffer| {
-            // SAFETY: `buffer` points at an allocation of `buffer.len()` bytes owned by `self`.
-            unsafe { buffer.as_mut() }.fill(value);
-        });
+        self.as_mut_slice().fill(value);
+    }
+
+    fn pixels_rgb_mut(&mut self) -> &mut [[u8; 3]] {
+        self.as_mut_slice().as_chunks_mut::<3>().0
     }
 }
 
-impl Drop for Framebuffer {
+impl<A: FramebufferAllocator> Drop for Framebuffer<A> {
     fn drop(&mut self) {
-        if let Some(buffer) = self.buffer.take() {
-            // SAFETY: `buffer` was allocated from `self.allocator` with `self.layout`.
-            unsafe { self.allocator.deallocate(buffer.cast(), self.layout) }
-        }
+        // SAFETY: `buffer` was allocated from `A` with `self.layout`.
+        unsafe { A::deallocate(self.buffer.cast(), self.layout) }
     }
 }
 
 #[derive(Debug)]
-struct ScreenConfiguration {
+struct ScreenConfiguration<A: FramebufferAllocator> {
     format: FramebufferColorFormat,
     dimensions: ScreenDimensions,
-    allocator: FramebufferAllocator,
-    fb0: Framebuffer,
-    fb1: Framebuffer,
+    fb0: Framebuffer<A>,
+    fb1: Framebuffer<A>,
     active_fb: FramebufferIndex,
 }
 
-impl ScreenConfiguration {
+impl<A: FramebufferAllocator> ScreenConfiguration<A> {
     fn new(
         dimensions: ScreenDimensions,
         format: FramebufferColorFormat,
-        allocator: FramebufferAllocator,
     ) -> core::result::Result<Self, AllocError> {
-        let fb0 = Framebuffer::new(dimensions, format, allocator)?;
-        let fb1 = Framebuffer::new(dimensions, format, allocator)?;
+        let fb0 = Framebuffer::new(dimensions, format)?;
+        let fb1 = Framebuffer::new(dimensions, format)?;
 
         Ok(Self {
             format,
             dimensions,
-            allocator,
             fb0,
             fb1,
             active_fb: FramebufferIndex::First,
@@ -239,7 +228,7 @@ impl ScreenConfiguration {
             mode |= 1 << 6; // 2D mode
         }
 
-        mode |= self.allocator.mode_bits();
+        mode |= A::MODE_BITS;
         mode
     }
 
@@ -261,6 +250,34 @@ impl ScreenConfiguration {
         Ok(())
     }
 
+    fn buffer_at(&self, index: FramebufferIndex) -> &Framebuffer<A> {
+        match index {
+            FramebufferIndex::First => &self.fb0,
+            FramebufferIndex::Second => &self.fb1,
+        }
+    }
+
+    fn buffer_at_mut(&mut self, index: FramebufferIndex) -> &mut Framebuffer<A> {
+        match index {
+            FramebufferIndex::First => &mut self.fb0,
+            FramebufferIndex::Second => &mut self.fb1,
+        }
+    }
+
+    fn active_buffer(&self) -> &Framebuffer<A> {
+        self.buffer_at(self.active_fb)
+    }
+
+    fn inactive_buffer_mut(&mut self) -> &mut Framebuffer<A> {
+        self.buffer_at_mut(self.active_fb.swap())
+    }
+
+    fn swap_buffers(&mut self) {
+        self.active_fb = self.active_fb.swap();
+    }
+}
+
+impl ScreenConfiguration<Linear> {
     fn fill_buffer(&mut self, index: FramebufferIndex, value: u8) {
         self.buffer_at_mut(index).fill(value)
     }
@@ -270,56 +287,34 @@ impl ScreenConfiguration {
         let inactive = self.active_fb.swap();
         self.fill_buffer(inactive, value)
     }
-
-    fn buffer_at(&self, index: FramebufferIndex) -> &Framebuffer {
-        match index {
-            FramebufferIndex::First => &self.fb0,
-            FramebufferIndex::Second => &self.fb1,
-        }
-    }
-
-    fn buffer_at_mut(&mut self, index: FramebufferIndex) -> &mut Framebuffer {
-        match index {
-            FramebufferIndex::First => &mut self.fb0,
-            FramebufferIndex::Second => &mut self.fb1,
-        }
-    }
-
-    fn active_buffer(&self) -> &Framebuffer {
-        self.buffer_at(self.active_fb)
-    }
-
-    fn inactive_buffer_mut(&mut self) -> &mut Framebuffer {
-        self.buffer_at_mut(self.active_fb.swap())
-    }
-
-    fn swap_buffers(&mut self) {
-        self.active_fb = self.active_fb.swap();
-    }
 }
 
+/// Double-buffered framebuffers for both screens, allocated from `A`.
+///
+/// Methods that write pixels with the CPU are only available for [`Linear`] framebuffers.
 #[derive(Debug)]
-pub struct Graphics<'g> {
+pub struct Graphics<'g, A: FramebufferAllocator = Linear> {
     gpu: &'g mut Gpu,
     stereoscopic: bool,
-    top: ScreenConfiguration,
-    bottom: ScreenConfiguration,
+    top: ScreenConfiguration<A>,
+    bottom: ScreenConfiguration<A>,
 }
 
-impl<'g> Graphics<'g> {
+impl<'g> Graphics<'g, Linear> {
     /// Initialize both screens as RGB8, with framebuffers in linear memory.
     ///
     /// Matches libctru's `gfxInitDefault`.
     pub fn init_default(gpu: &'g mut Gpu) -> Result<Self> {
         use FramebufferColorFormat::RGB8;
-        Self::init(gpu, RGB8, RGB8, FramebufferAllocator::Linear)
+        Self::init(gpu, RGB8, RGB8)
     }
+}
 
+impl<'g, A: FramebufferAllocator> Graphics<'g, A> {
     pub fn init(
         gpu: &'g mut Gpu,
         format_top: FramebufferColorFormat,
         format_bottom: FramebufferColorFormat,
-        allocator: FramebufferAllocator,
     ) -> Result<Self> {
         use crate::result::{CommonDescription, Level, Module, Summary};
         use Screen::{Bottom, Top};
@@ -330,13 +325,16 @@ impl<'g> Graphics<'g> {
             CommonDescription::InvalidResultValue as u32,
         );
 
-        info!("Allocating framebuffers from {:?} memory", allocator);
+        info!(
+            "Allocating framebuffers from {} memory",
+            core::any::type_name::<A>()
+        );
 
         debug!("Configuring top screen framebuffer...");
-        let top = ScreenConfiguration::new(Top.dimensions(), format_top, allocator)
-            .map_err(|_| ERR_SCREEN_ALLOC)?;
+        let top =
+            ScreenConfiguration::new(Top.dimensions(), format_top).map_err(|_| ERR_SCREEN_ALLOC)?;
         debug!("Configuring bottom screen framebuffer...");
-        let bottom = ScreenConfiguration::new(Bottom.dimensions(), format_bottom, allocator)
+        let bottom = ScreenConfiguration::new(Bottom.dimensions(), format_bottom)
             .map_err(|_| ERR_SCREEN_ALLOC)?;
 
         top.present_buffer(Top, gpu)?;
@@ -363,68 +361,18 @@ impl<'g> Graphics<'g> {
         &self.screen_configuration(screen).dimensions
     }
 
-    fn screen_configuration(&self, screen: Screen) -> &ScreenConfiguration {
+    fn screen_configuration(&self, screen: Screen) -> &ScreenConfiguration<A> {
         match screen {
             Screen::Top => &self.top,
             Screen::Bottom => &self.bottom,
         }
     }
 
-    fn screen_configuration_mut(&mut self, screen: Screen) -> &mut ScreenConfiguration {
+    fn screen_configuration_mut(&mut self, screen: Screen) -> &mut ScreenConfiguration<A> {
         match screen {
             Screen::Top => &mut self.top,
             Screen::Bottom => &mut self.bottom,
         }
-    }
-
-    /// Fill the off-screen buffer of the selected screen.
-    ///
-    /// Nothing becomes visible until [`Self::swap_buffers`] is called.
-    pub fn fill_screen(&mut self, screen: Screen, value: u8) {
-        self.screen_configuration_mut(screen).fill_inactive(value);
-    }
-
-    #[inline]
-    pub fn fill_screen_rgb(&mut self, screen: Screen, pixel: [u8; 3]) {
-        self.screen_configuration_mut(screen)
-            .inactive_buffer_mut()
-            .with_mut(|buffer| unsafe {
-                let (chunks, _) = buffer.as_mut().as_chunks_mut::<3>();
-                chunks.fill(pixel);
-            });
-    }
-
-    pub fn with_buffer_mut<F>(&mut self, screen: Screen, f: F)
-    where
-        F: FnOnce(&mut NonNull<[u8]>),
-    {
-        self.screen_configuration_mut(screen)
-            .inactive_buffer_mut()
-            .with_mut(f)
-    }
-
-    pub fn with_pixels_rgb_mut<F>(&mut self, screen: Screen, f: F)
-    where
-        F: FnOnce(&mut [[u8; 3]]),
-    {
-        self.screen_configuration_mut(screen)
-            .inactive_buffer_mut()
-            .with_mut(|buffer| {
-                let (chunks, _) = unsafe { buffer.as_mut() }.as_chunks_mut::<3>();
-                f(chunks)
-            })
-    }
-
-    pub fn set_pixel_rgb(&mut self, screen: Screen, x: u16, y: u16, pixel: [u8; 3]) {
-        let cfg = self.screen_configuration_mut(screen);
-        let offset = x * cfg.dimensions.width + y;
-
-        cfg.inactive_buffer_mut().with_mut(|buffer| {
-            let (chunks, _) = unsafe { buffer.as_mut() }.as_chunks_mut::<3>();
-            if let Some(target) = chunks.get_mut(usize::from(offset)) {
-                *target = pixel;
-            }
-        });
     }
 
     /// Make the off-screen buffer of both screens the visible one.
@@ -444,5 +392,55 @@ impl<'g> Graphics<'g> {
         while !self.gpu.next_event()?.contains(InterruptEvent::VBlank0) {}
 
         Ok(())
+    }
+}
+
+impl Graphics<'_, Linear> {
+    /// Fill the off-screen buffer of the selected screen.
+    ///
+    /// Nothing becomes visible until [`Self::swap_buffers`] is called.
+    pub fn fill_screen(&mut self, screen: Screen, value: u8) {
+        self.screen_configuration_mut(screen).fill_inactive(value);
+    }
+
+    #[inline]
+    pub fn fill_screen_rgb(&mut self, screen: Screen, pixel: [u8; 3]) {
+        self.screen_configuration_mut(screen)
+            .inactive_buffer_mut()
+            .pixels_rgb_mut()
+            .fill(pixel);
+    }
+
+    pub fn with_buffer_mut<F>(&mut self, screen: Screen, f: F)
+    where
+        F: FnOnce(&mut [u8]),
+    {
+        f(self
+            .screen_configuration_mut(screen)
+            .inactive_buffer_mut()
+            .as_mut_slice())
+    }
+
+    pub fn with_pixels_rgb_mut<F>(&mut self, screen: Screen, f: F)
+    where
+        F: FnOnce(&mut [[u8; 3]]),
+    {
+        f(self
+            .screen_configuration_mut(screen)
+            .inactive_buffer_mut()
+            .pixels_rgb_mut())
+    }
+
+    pub fn set_pixel_rgb(&mut self, screen: Screen, x: u16, y: u16, pixel: [u8; 3]) {
+        let cfg = self.screen_configuration_mut(screen);
+        let offset = x * cfg.dimensions.width + y;
+
+        if let Some(target) = cfg
+            .inactive_buffer_mut()
+            .pixels_rgb_mut()
+            .get_mut(usize::from(offset))
+        {
+            *target = pixel;
+        }
     }
 }
