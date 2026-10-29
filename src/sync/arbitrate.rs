@@ -9,6 +9,8 @@ use crate::sync::AtomicHandle;
 
 use core::sync::atomic::{AtomicI32, Ordering};
 
+use talc::lock_api;
+
 #[derive(Debug)]
 #[repr(u32)]
 #[non_exhaustive]

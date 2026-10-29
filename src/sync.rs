@@ -11,7 +11,7 @@ use crate::svc::{self, Timeout};
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use lock_api::{GuardNoSend, RawMutex, RawMutexTimed};
+use talc::lock_api::{self, GuardNoSend, RawMutex, RawMutexTimed};
 
 #[repr(u32)]
 #[derive(Debug)]

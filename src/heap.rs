@@ -8,16 +8,16 @@ use crate::result::ERROR_OUT_OF_MEMORY;
 use crate::sync::arbitrate::RawMutex;
 use crate::{early_debug, os::mem, result::Result, svc};
 
-use core::alloc::Allocator;
 use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::{
-    alloc::{Layout, LayoutError},
+    alloc::{AllocError, Layout, LayoutError},
     fmt,
     ptr::NonNull,
 };
 
-use talc::{ErrOnOom, Span, Talck};
+use talc::source::{Manual, Source};
+use talc::TalcLock;
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
@@ -25,7 +25,38 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 }
 
 #[global_allocator]
-pub(crate) static ALLOCATOR: Talck<RawMutex, ErrOnOom> = talc::Talc::new(ErrOnOom).lock();
+pub(crate) static ALLOCATOR: TalcLock<RawMutex, Manual> = TalcLock::new(Manual);
+
+/// Allocate `layout` from `talc`.
+///
+/// Talc only implements `allocator_api2`'s `Allocator` trait, not the one in `core`, so this
+/// mirrors its implementation using `core` types instead.
+pub(crate) fn allocate<S: Source>(
+    talc: &TalcLock<RawMutex, S>,
+    layout: Layout,
+) -> core::result::Result<NonNull<[u8]>, AllocError> {
+    if layout.size() == 0 {
+        return Ok(NonNull::slice_from_raw_parts(NonNull::dangling(), 0));
+    }
+
+    // SAFETY: `layout` has a nonzero size.
+    unsafe { talc.lock().allocate(layout) }
+        .map(|ptr| NonNull::slice_from_raw_parts(ptr, layout.size()))
+        .ok_or(AllocError)
+}
+
+/// # Safety
+///
+/// `ptr` and `layout` must come from a matching [`allocate`] call on the same `talc`.
+pub(crate) unsafe fn deallocate<S: Source>(
+    talc: &TalcLock<RawMutex, S>,
+    ptr: NonNull<u8>,
+    layout: Layout,
+) {
+    if layout.size() != 0 {
+        unsafe { talc.lock().deallocate(ptr.as_ptr(), layout) }
+    }
+}
 
 /// Allocator for *linear* memory.
 ///
@@ -40,10 +71,11 @@ pub(crate) static ALLOCATOR: Talck<RawMutex, ErrOnOom> = talc::Talc::new(ErrOnOo
 /// [invalidate_data_cache]: crate::services::gsp::gpu::Gpu::invalidate_data_cache
 /// [flush_data_cache]: crate::services::gsp::gpu::Gpu::flush_data_cache
 pub mod linear {
-    use core::alloc::{AllocError, Allocator, Layout};
+    use core::alloc::{AllocError, Layout};
     use core::ptr::NonNull;
 
-    use talc::{ErrOnOom, Talc, Talck};
+    use talc::source::Manual;
+    use talc::TalcLock;
 
     use crate::sync::arbitrate::RawMutex;
 
@@ -54,30 +86,32 @@ pub mod linear {
     pub const ALIGNMENT: usize = 0x80;
 
     pub struct LinearAllocator {
-        inner: Talck<RawMutex, ErrOnOom>,
+        inner: TalcLock<RawMutex, Manual>,
     }
 
     pub static ALLOCATOR: LinearAllocator = LinearAllocator {
-        inner: Talc::new(ErrOnOom).lock(),
+        inner: TalcLock::new(Manual),
     };
 
     impl LinearAllocator {
+        /// Returns the end of the claimed heap, or [`None`] if `size` is too small to claim.
+        ///
         /// # Safety
         ///
-        /// `span` must cover memory that is mapped, writable, and owned by this allocator.
-        pub(super) unsafe fn claim(&self, span: talc::Span) -> Result<talc::Span, ()> {
-            unsafe { self.inner.talc().claim(span) }
+        /// `base..base + size` must be memory that is mapped, writable, and owned by this allocator.
+        pub(super) unsafe fn claim(&self, base: *mut u8, size: usize) -> Option<NonNull<u8>> {
+            unsafe { self.inner.lock().claim(base, size) }
         }
 
         pub fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-            self.inner.allocator().allocate(layout)
+            super::allocate(&self.inner, layout)
         }
 
         /// # Safety
         ///
         /// `ptr` and `layout` must come from a matching [`Self::allocate`] call.
         pub unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-            unsafe { self.inner.allocator().deallocate(ptr, layout) }
+            unsafe { super::deallocate(&self.inner, ptr, layout) }
         }
     }
 }
@@ -174,11 +208,9 @@ pub(crate) fn init() -> Result<()> {
             )?
         };
 
-        let heap_span = Span::from_base_size(heap_start as *mut u8, heap_size);
-
         crate::svc::output_debug_string("Mapped heap");
 
-        let usable_span = unsafe {
+        let heap_end = unsafe {
             use crate::result::*;
             const ERROR: ErrorCode = ErrorCode::new(
                 Level::Fatal,
@@ -186,16 +218,19 @@ pub(crate) fn init() -> Result<()> {
                 Module::Application,
                 CommonDescription::InvalidSize as u32,
             );
-            ALLOCATOR.talc().claim(heap_span).map_err(|_| ERROR)?
+            ALLOCATOR
+                .lock()
+                .claim(heap_start as *mut u8, heap_size)
+                .ok_or(ERROR)?
         };
 
         HEAP_INITIALIZED.store(true, Ordering::Release);
 
         early_debug!(
-            "Initialized heap at {}, size = 0x{:08x}, usable = {}",
-            heap_span,
+            "Initialized heap at {:p}, size = 0x{:08x}, end = {:p}",
+            heap_start as *const (),
             heap_size,
-            usable_span
+            heap_end
         );
 
         heap_start
@@ -213,9 +248,7 @@ pub(crate) fn init() -> Result<()> {
             )?
         };
 
-        let linear_span = Span::from_base_size(linear_heap_start as *mut u8, linear_heap_size);
-
-        let usable_span = unsafe {
+        let linear_heap_end = unsafe {
             use crate::result::*;
             const ERROR: ErrorCode = ErrorCode::new(
                 Level::Fatal,
@@ -223,14 +256,16 @@ pub(crate) fn init() -> Result<()> {
                 Module::Application,
                 CommonDescription::InvalidSize as u32,
             );
-            linear::ALLOCATOR.claim(linear_span).map_err(|_| ERROR)?
+            linear::ALLOCATOR
+                .claim(linear_heap_start as *mut u8, linear_heap_size)
+                .ok_or(ERROR)?
         };
 
         early_debug!(
-            "Initialized linear heap at {:p}, size = 0x{:08x}, usable = {}",
+            "Initialized linear heap at {:p}, size = 0x{:08x}, end = {:p}",
             linear_heap_start as *const (),
             linear_heap_size,
-            usable_span
+            linear_heap_end
         );
     }
 
@@ -268,12 +303,7 @@ impl PageAlignedBuffer {
 
     pub fn allocate(size: usize) -> ::core::result::Result<Self, PageAlignError> {
         let layout = Self::layout_for_size(size).map_err(PageAlignError::Layout)?;
-        let buffer = Some(
-            ALLOCATOR
-                .allocator()
-                .allocate(layout)
-                .map_err(|_| PageAlignError::Alloc)?,
-        );
+        let buffer = Some(allocate(&ALLOCATOR, layout).map_err(|_| PageAlignError::Alloc)?);
         Ok(PageAlignedBuffer { buffer })
     }
 
@@ -308,7 +338,7 @@ impl Drop for PageAlignedBuffer {
         if let Some(buffer) = self.buffer {
             unsafe {
                 let layout = Self::layout_for_size_unchecked(buffer.len());
-                ALLOCATOR.allocator().deallocate(buffer.cast(), layout)
+                deallocate(&ALLOCATOR, buffer.cast(), layout)
             };
         }
     }
