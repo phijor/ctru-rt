@@ -162,8 +162,8 @@ impl core::ops::Not for FramebufferIndex {
 #[repr(C)]
 struct FramebufferInfoSlot {
     active_framebuffer: u32,
-    fb0_vaddr: u32,
-    fb1_vaddr: u32,
+    left_vaddr: u32,
+    right_vaddr: u32,
     stride: u32,
     format: u32,
     display_select: u32,
@@ -242,19 +242,19 @@ impl FramebufferInfo {
     fn update(
         &mut self,
         active_fb: FramebufferIndex,
-        fb0: *const u8,
-        fb1: *const u8,
+        left: *const u8,
+        right: *const u8,
         stride: u32,
         format: u32,
     ) {
-        debug!("Updating framebuffer: active = {:?}, fb0 = {:p}, fb1 = {:p}, stride = {}, format = {:b}", active_fb, fb0, fb1, stride, format);
+        debug!("Updating framebuffer: active = {:?}, left = {:p}, right = {:p}, stride = {}, format = {:b}", active_fb, left, right, stride, format);
         {
             let fb_info = {
                 let active_fb = u8::from(active_fb) as u32;
                 FramebufferInfoSlot {
                     active_framebuffer: active_fb,
-                    fb0_vaddr: fb0 as u32,
-                    fb1_vaddr: fb1 as u32,
+                    left_vaddr: left as u32,
+                    right_vaddr: right as u32,
                     stride,
                     format,
                     display_select: active_fb,
@@ -401,14 +401,14 @@ impl Sharedmem {
         &mut self,
         screen: Screen,
         active_fb: FramebufferIndex,
-        fb0: *const u8,
-        fb1: *const u8,
+        left: *const u8,
+        right: *const u8,
         stride: u32,
         mode: u32,
     ) {
         let mut fb_info = unsafe { self.framebuffer_info_for(screen) };
 
-        fb_info.update(active_fb, fb0, fb1, stride, mode)
+        fb_info.update(active_fb, left, right, stride, mode)
     }
 
     pub(self) fn graphics_command_queue(&mut self) -> GraphicsCommandQueue {
@@ -657,13 +657,13 @@ impl Gpu {
         &mut self,
         screen: Screen,
         active_fb: FramebufferIndex,
-        fb0: *const u8,
-        fb1: *const u8,
+        left: *const u8,
+        right: *const u8,
         stride: u32,
         mode: u32,
     ) {
         self.interrupt_relay_queue
-            .present_buffer(screen, active_fb, fb0, fb1, stride, mode)
+            .present_buffer(screen, active_fb, left, right, stride, mode)
     }
 
     /// Flush data at `[addr, addr + size)` from the CPU data cache to main memory.
