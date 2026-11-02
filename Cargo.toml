@@ -22,3 +22,7 @@ utf16_lit = "2.0.2"
 [lib]
 test = false
 bench = false
+
+[build-dependencies]
+anyhow = "1.0.104"
+bdf-reader = "0.1.3"
