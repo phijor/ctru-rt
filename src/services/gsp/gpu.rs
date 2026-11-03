@@ -33,7 +33,7 @@ pub struct ScreenDimensions {
 }
 
 impl Screen {
-    pub(crate) const fn dimensions(&self) -> ScreenDimensions {
+    pub const fn dimensions(&self) -> ScreenDimensions {
         match self {
             Self::Top => ScreenDimensions {
                 width: 240,

@@ -25,7 +25,6 @@ bench = false
 
 [build-dependencies]
 anyhow = "1.0.104"
-bdf-reader = "0.1.3"
 
 [workspace]
-members = ["ctru-rt-macros"]
+members = ["ctru-console", "ctru-rt-macros"]

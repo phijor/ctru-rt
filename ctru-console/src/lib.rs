@@ -2,13 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+#![no_std]
+
+extern crate alloc;
+
 use alloc::{boxed::Box, vec};
 use core::ops::Range;
 
-use crate::{
-    graphics::{framebuffer::Linear, Graphics},
-    services::gsp::gpu::Screen,
-};
+use ctru_rt::{graphics::Graphics, services::gsp::gpu::Screen};
 
 /// `build.rs` generates a binary blob containing glyphs extracted from a BDF font.
 /// The blob consists of a 4 byte header, followed by an array of glyph bitmaps.
@@ -34,16 +35,23 @@ use crate::{
 const FONT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/font.bin"));
 
 const HEADER: &[u8] = FONT.split_at(4).0;
+
 const RAW_GLYPHS: &[u8] = FONT.split_at(4).1;
 
 const ADVANCE: usize = HEADER[0] as usize;
+
 const HEIGHT: usize = HEADER[1] as usize;
+
 const FIRST: usize = HEADER[2] as usize;
+
 const COUNT: usize = HEADER[3] as usize;
 
 type Row = u8;
+
 const GLYPHS: &[[Row; HEIGHT]] = RAW_GLYPHS.as_chunks::<HEIGHT>().0;
+
 const _: () = assert!(RAW_GLYPHS.as_chunks::<HEIGHT>().1.is_empty());
+
 const _: () = assert!(GLYPHS.len() == COUNT + 1);
 
 /// A reference to a glyph bitmap in the font.
@@ -148,11 +156,7 @@ impl Console {
     #[inline]
     fn next_line(&self, mut line: usize) -> usize {
         line += 1;
-        if line >= self.height {
-            0
-        } else {
-            line
-        }
+        if line >= self.height { 0 } else { line }
     }
 
     fn shift_up(&mut self) {
@@ -226,7 +230,7 @@ impl Console {
         self.height
     }
 
-    pub fn render(&self, gfx: &mut Graphics<'_, Linear>) {
+    pub fn render(&self, gfx: &mut Graphics<'_>) {
         let dim = self.screen.dimensions();
         const FG: [u8; 3] = [0xff; 3];
         const BG: [u8; 3] = [0x00; 3];

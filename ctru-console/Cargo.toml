@@ -1,0 +1,20 @@
+[package]
+name = "ctru-console"
+version = "0.1.0"
+authors = ["Philipp Joram <mail@phijor.me>"]
+edition = "2021"
+license = "MPL-2.0"
+
+[dependencies]
+ctru-rt = { path = ".." }
+
+[dev-dependencies]
+log = { version = "0.4", default-features = false }
+
+[lib]
+test = false
+bench = false
+
+[build-dependencies]
+anyhow = "1.0.104"
+bdf-reader = "0.1.3"

@@ -10,10 +10,11 @@ extern crate alloc;
 use core::{fmt::Write as _, panic::PanicInfo};
 use log::error;
 
+use ctru_console::Console;
 use ctru_rt::{
     debug::init_log,
     entry,
-    graphics::{console::Console, Graphics},
+    graphics::Graphics,
     ports::srv::Srv,
     result::Result,
     services::{
