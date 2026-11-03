@@ -9,7 +9,7 @@ mod screen;
 use framebuffer::{Allocator, ColorFormat, Linear};
 
 use crate::result::{ErrorCode, Result};
-use crate::services::gsp::gpu::{Gpu, InterruptEvent, Screen, ScreenDimensions};
+use crate::services::gsp::gpu::{FramebufferIndex, Gpu, InterruptEvent, Screen, ScreenDimensions};
 
 use log::{debug, info};
 
@@ -125,6 +125,12 @@ impl Graphics<'_, Linear> {
     /// Nothing becomes visible until [`Self::swap_buffers`] is called.
     pub fn fill_screen(&mut self, screen: Screen, value: u8) {
         self.swap_chain_mut(screen).fill_inactive(value);
+    }
+
+    pub fn clear_screen(&mut self, screen: Screen) {
+        let chain = self.swap_chain_mut(screen);
+        chain.fill_buffer(FramebufferIndex::First, 0);
+        chain.fill_buffer(FramebufferIndex::Second, 0);
     }
 
     #[inline]

@@ -90,7 +90,7 @@ impl<A: Allocator> SwapChain<A> {
 }
 
 impl SwapChain<Linear> {
-    fn fill_buffer(&mut self, index: FramebufferIndex, value: u8) {
+    pub(super) fn fill_buffer(&mut self, index: FramebufferIndex, value: u8) {
         self.buffer_at_mut(index).fill(value)
     }
 
