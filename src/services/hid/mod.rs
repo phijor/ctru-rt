@@ -159,6 +159,14 @@ impl KeyPad {
         Self(bits)
     }
 
+    pub const fn update(&mut self, new: Self) -> KeyPadChanged {
+        let down = Self::new(!self.0 & new.0);
+        let up = Self::new(self.0 & !new.0);
+
+        *self = new;
+        KeyPadChanged { down, up }
+    }
+
     _keypad_key! {a, 0}
     _keypad_key! {b, 1}
     _keypad_key! {select, 2}
@@ -175,6 +183,12 @@ impl KeyPad {
     _keypad_key! {cpad_left, 29}
     _keypad_key! {cpad_up, 30}
     _keypad_key! {cpad_down, 31}
+}
+
+#[derive(Clone, Copy)]
+pub struct KeyPadChanged {
+    pub down: KeyPad,
+    pub up: KeyPad,
 }
 
 struct DebugLiteral(&'static str);
