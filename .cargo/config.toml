@@ -8,5 +8,5 @@ build-std-features = ["compiler-builtins-mem"]
 [target.armv6k-nintendo-horizon_ctr-elf]
 runner = "azahar"
 rustflags = [
-    "-C", "link-arg=link.x",
+    "-C", "link-arg=-Tlink.x",
 ]
