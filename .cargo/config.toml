@@ -5,8 +5,13 @@ target = "armv6k-nintendo-horizon_ctr-elf.json"
 build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
 
+[alias]
+# Run on real hardware via the Homebrew Launcher's netloader instead of Azahar.
+run-3ds = ["run", "--config", "env.CTRU_RT_RUNNER = '3dslink'"]
+
 [target.armv6k-nintendo-horizon_ctr-elf]
-runner = "azahar"
+# Runs in Azahar unless `CTRU_RT_RUNNER` says otherwise, see the script.
+runner = "scripts/runner.sh"
 rustflags = [
     "-C", "link-arg=-Tlink.x",
 ]
