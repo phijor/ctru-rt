@@ -247,7 +247,7 @@ impl FramebufferInfo {
         stride: u32,
         format: u32,
     ) {
-        debug!("Updating framebuffer: active = {:?}, left = {:p}, right = {:p}, stride = {}, format = {:b}", active_fb, left, right, stride, format);
+        trace!("Updating framebuffer: active = {:?}, left = {:p}, right = {:p}, stride = {}, format = {:b}", active_fb, left, right, stride, format);
         {
             let fb_info = {
                 let active_fb = u8::from(active_fb) as u32;
