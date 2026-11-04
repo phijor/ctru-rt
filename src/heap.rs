@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::os::reslimit::process_limits;
 use crate::os::PseudoHandle;
+use crate::os::reslimit::process_limits;
 use crate::result::ERROR_OUT_OF_MEMORY;
 use crate::sync::arbitrate::RawMutex;
 use crate::{early_debug, os::mem, result::Result, svc};
@@ -16,8 +16,8 @@ use core::{
     ptr::NonNull,
 };
 
-use talc::source::{Manual, Source};
 use talc::TalcLock;
+use talc::source::{Manual, Source};
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
@@ -74,8 +74,8 @@ pub mod linear {
     use core::alloc::{AllocError, Layout};
     use core::ptr::NonNull;
 
-    use talc::source::Manual;
     use talc::TalcLock;
+    use talc::source::Manual;
 
     use crate::sync::arbitrate::RawMutex;
 
@@ -120,7 +120,7 @@ const HEAP_START: usize = 0x0800_0000;
 const HEAP_SPLIT_CAP: usize = 24 << 20; // 24 MiB
 const LINEAR_HEAP_SPLIT_CAP: usize = 32 << 20; // 32 MiB
 
-extern "C" {
+unsafe extern "C" {
     static __heap_size: AtomicUsize;
     static __linear_heap_size: AtomicUsize;
 }
@@ -136,12 +136,14 @@ pub(crate) fn linear_heap_size() -> usize {
 }
 
 unsafe fn set_heap_size(heap_size: usize) {
-    // TODO: This writes to (R-X) memory lol
-    __heap_size.store(heap_size, Ordering::Release)
+    unsafe {
+        // TODO: This writes to (R-X) memory lol
+        __heap_size.store(heap_size, Ordering::Release)
+    }
 }
 
 unsafe fn set_linear_heap_size(linear_heap_size: usize) {
-    __linear_heap_size.store(linear_heap_size, Ordering::Release)
+    unsafe { __linear_heap_size.store(linear_heap_size, Ordering::Release) }
 }
 
 #[inline]
@@ -323,7 +325,7 @@ impl PageAlignedBuffer {
     }
 
     unsafe fn layout_for_size_unchecked(size: usize) -> Layout {
-        Layout::from_size_align_unchecked(size, 0x1000)
+        unsafe { Layout::from_size_align_unchecked(size, 0x1000) }
     }
 }
 

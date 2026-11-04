@@ -5,9 +5,9 @@
 use crate::{
     ipc::IpcRequest,
     os::{
+        OwnedHandle, SystemTick,
         mem::MemoryPermission,
         sharedmem::{MappedBlock, SharedMemoryMapper},
-        OwnedHandle, SystemTick,
     },
     ports::srv::Srv,
     result::Result,
@@ -37,7 +37,7 @@ impl SharedMemory {
     }
 
     unsafe fn read<T>(&self, offset: isize) -> T {
-        (self.sharedmem.as_ptr().offset(offset) as *const T).read_volatile()
+        unsafe { (self.sharedmem.as_ptr().offset(offset) as *const T).read_volatile() }
     }
 
     fn current_update(&self) -> SystemTick {
@@ -63,7 +63,7 @@ impl SharedMemory {
 
     unsafe fn pad_state(&self, index: u32) -> *const u32 {
         debug_assert!(index < 8);
-        self.sharedmem.as_ptr().offset(10 + (index * 4) as isize)
+        unsafe { self.sharedmem.as_ptr().offset(10 + (index * 4) as isize) }
     }
 
     fn pad_current(&self, index: u32) -> u32 {
@@ -107,8 +107,14 @@ impl Hid {
         debug!("Acquiring IPC handles for HID module...");
         let reply = IpcRequest::command(0xa).dispatch(&service_handle)?;
 
-        let [memory_handle, pad0, pad1, accelerometer, gyroscope, debugpad]: [OwnedHandle; 6] =
-            unsafe { reply.finish_results().read_translate_result() };
+        let [
+            memory_handle,
+            pad0,
+            pad1,
+            accelerometer,
+            gyroscope,
+            debugpad,
+        ]: [OwnedHandle; 6] = unsafe { reply.finish_results().read_translate_result() };
 
         debug!("Mapping HID shared memory...");
         // It's important to map memory last: if this fails, all handles above are dropped properly

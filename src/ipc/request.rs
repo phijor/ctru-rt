@@ -7,7 +7,7 @@ use crate::result::{Result, ResultCode};
 use crate::svc;
 
 use super::reply::IpcReply;
-use super::{state, CommandBuffer, IpcHeader, Parameter, TranslateParameter};
+use super::{CommandBuffer, IpcHeader, Parameter, TranslateParameter, state};
 
 use core::marker::PhantomData;
 
@@ -34,7 +34,9 @@ impl CommandBufferWriter {
     }
 
     pub(crate) unsafe fn advance(&mut self) {
-        self.end_ptr = self.end_ptr.add(1);
+        unsafe {
+            self.end_ptr = self.end_ptr.add(1);
+        }
     }
 
     pub(crate) fn pos(&self) -> usize {

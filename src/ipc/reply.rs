@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::{state, CommandBuffer, IpcResult, TranslateResult};
+use super::{CommandBuffer, IpcResult, TranslateResult, state};
 use crate::ipc::IpcHeader;
 use crate::os::OwnedHandle;
 
@@ -57,7 +57,7 @@ pub(crate) struct IpcReply<S: state::State = state::Normal> {
 
 impl IpcReply<state::Normal> {
     pub(crate) unsafe fn new(buf: *const u32) -> Self {
-        let mut cmdbuf = CommandBufferReader::new(buf);
+        let mut cmdbuf = unsafe { CommandBufferReader::new(buf) };
         let header = cmdbuf.read(); // Skip the header. Replies are not yet validated.
 
         trace!("Received IPC reply: header = {:#x?}", IpcHeader(header));
@@ -89,16 +89,16 @@ impl IpcReply<state::Normal> {
 impl IpcReply<state::Translate> {
     #[inline]
     pub(crate) unsafe fn read_translate_result<R: TranslateResult>(&mut self) -> R {
-        R::decode(&mut self.cmdbuf)
+        unsafe { R::decode(&mut self.cmdbuf) }
     }
 
     #[inline]
     pub(crate) unsafe fn read_handle(&mut self) -> OwnedHandle {
-        self.read_translate_result()
+        unsafe { self.read_translate_result() }
     }
 
     #[inline]
     pub(crate) unsafe fn read_handles<const N: usize>(&mut self) -> [OwnedHandle; N] {
-        self.read_translate_result()
+        unsafe { self.read_translate_result() }
     }
 }

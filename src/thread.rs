@@ -19,7 +19,8 @@ use log::debug;
 
 unsafe extern "C" fn _ctru_rt_thread_start(argument: usize) {
     early_debug!("We are in _ctru_rt_thread_start(0x{:08x})!", argument);
-    let packet = ThreadPacket::from_argument(argument);
+
+    let packet = unsafe { ThreadPacket::from_argument(argument) };
 
     early_debug!("Got a packet: entry_point={:p}", packet.entry_point);
 
@@ -43,7 +44,7 @@ impl ThreadPacket {
     }
 
     unsafe fn from_argument(argument: usize) -> Box<ThreadPacket> {
-        Box::from_raw(argument as *mut ThreadPacket)
+        unsafe { Box::from_raw(argument as *mut ThreadPacket) }
     }
 
     fn into_argument(packet: Box<ThreadPacket>) -> usize {
@@ -79,7 +80,7 @@ impl<T> ReturnValue<T> {
     }
 
     unsafe fn store(&self, return_value: T) {
-        (*self.value.get()).write(return_value);
+        unsafe { (*self.value.get()).write(return_value) };
         self.is_set.store(true, Ordering::Release);
     }
 }
@@ -96,12 +97,12 @@ impl<T> Clone for ReturnValuePtr<T> {
 
 impl<T> ReturnValuePtr<T> {
     unsafe fn new(ptr: *mut ReturnValue<T>) -> Self {
-        ptr.write(ReturnValue::new());
+        unsafe { ptr.write(ReturnValue::new()) };
         Self(ptr)
     }
 
     unsafe fn store(&self, return_value: T) {
-        (*self.0).store(return_value)
+        unsafe { (*self.0).store(return_value) }
     }
 }
 
@@ -148,7 +149,7 @@ impl<T> ThreadMemory<T> {
     }
 
     unsafe fn dealloc(self) {
-        alloc::alloc::dealloc(self.allocated, self.layout)
+        unsafe { alloc::alloc::dealloc(self.allocated, self.layout) }
     }
 }
 
@@ -232,7 +233,8 @@ impl ThreadBuilder {
 
         debug!(
             "Launching thread: priority={}, argument={:p}, mem_start={:p}, stack_top={:p}, return_value={:p}, processor_id={}",
-            self.priority, argument as *const (),
+            self.priority,
+            argument as *const (),
             thread_memory.allocated,
             thread_memory.stack_top,
             &thread_memory.return_value,

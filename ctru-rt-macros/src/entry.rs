@@ -34,12 +34,12 @@ pub(crate) fn entry(args: AttributeArgs, entry_point: ItemFn) -> TokenStream {
             sig,
             "`#[entry]` function must have signature `[unsafe] fn()` or `[unsafe] fn() -> !`",
         )
-        .to_compile_error()
+        .to_compile_error();
     }
 
     if !args.is_empty() {
         return parse::Error::new(Span::call_site(), "This attribute accepts no arguments")
-            .to_compile_error()
+            .to_compile_error();
     }
 
     let ident = &entry_point.sig.ident;
@@ -48,7 +48,7 @@ pub(crate) fn entry(args: AttributeArgs, entry_point: ItemFn) -> TokenStream {
         #[inline(always)]
         #entry_point
 
-        #[export_name = "_ctru_rt_entry"]
+        #[unsafe(export_name = "_ctru_rt_entry")]
         pub unsafe fn _ctru_rt_entry() {
             #ident()
         }

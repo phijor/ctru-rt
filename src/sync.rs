@@ -5,7 +5,7 @@
 pub mod arbitrate;
 
 use crate::early_debug;
-use crate::os::{AsHandle, BorrowedHandle, OwnedHandle, SystemTick, CLOSED_HANDLE};
+use crate::os::{AsHandle, BorrowedHandle, CLOSED_HANDLE, OwnedHandle, SystemTick};
 use crate::result::Result;
 use crate::svc::{self, Timeout};
 

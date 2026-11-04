@@ -2,7 +2,7 @@
 name = "ctru-rt-macros"
 version = "0.1.0"
 authors = ["Philipp Joram <mail@phijor.me>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 quote = "1"

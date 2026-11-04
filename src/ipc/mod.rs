@@ -214,24 +214,25 @@ impl<const N: usize> TranslateResult for [OwnedHandle; N] {
         if N == 0 {
             const EMPTY: [OwnedHandle; 0] = [];
             let handles = &EMPTY as *const [_; 0] as *const [_; N];
-            return handles.read();
+            return unsafe { handles.read() };
         }
 
         let header = cmdbuf.read();
         let num_handles = (header >> 26) + 1;
         debug_assert_eq!(num_handles, N as u32);
 
-        let mut handles: [MaybeUninit<OwnedHandle>; N] = MaybeUninit::uninit().assume_init();
+        let mut handles: [MaybeUninit<OwnedHandle>; N] = [const { MaybeUninit::uninit() }; N];
 
         for uninit_handle in &mut handles {
             let raw_handle: RawHandle = cmdbuf.read();
-            let new_handle =
-                OwnedHandle::new(raw_handle).expect("Command buffer contained an invalid Handle");
+            let new_handle = unsafe {
+                OwnedHandle::new(raw_handle).expect("Command buffer contained an invalid Handle")
+            };
 
             uninit_handle.write(new_handle);
         }
 
-        MaybeUninit::array_assume_init(handles)
+        unsafe { MaybeUninit::array_assume_init(handles) }
     }
 }
 
@@ -242,7 +243,10 @@ impl TranslateResult for OwnedHandle {
         let num_handles = (header >> 26) + 1;
         debug_assert_eq!(num_handles, 1);
 
-        OwnedHandle::new(cmdbuf.read()).expect("Command buffer contained an invalid Handle")
+        unsafe {
+            let handle = cmdbuf.read();
+            OwnedHandle::new(handle).expect("Command buffer contained an invalid Handle")
+        }
     }
 }
 

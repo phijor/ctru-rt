@@ -58,17 +58,19 @@ global_asm! {
 //     };
 // }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn _ctru_rt_start() {
     crate::sync::arbitrate::init().expect("Failed to create address arbiter");
     crate::heap::init().expect("Failed to initialize heap");
     crate::early_debug!("Mapped heap.");
 
-    extern "Rust" {
-        fn _ctru_rt_entry();
+    unsafe extern "Rust" {
+        unsafe fn _ctru_rt_entry();
     }
 
-    _ctru_rt_entry();
+    unsafe {
+        _ctru_rt_entry();
+    }
 }
 
 #[doc(hidden)]
@@ -77,8 +79,8 @@ unsafe extern "C" fn _ctru_rt_start() {
 /// Until we implement stack unwinding, this shouldn't be necessary.  But trying to use the alloc
 /// crate requires this symbol and the linker gets angry if it can't find it.  So some time in the
 /// future we should figure out how and under which circumstances we can get rid of it.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn __aeabi_unwind_cpp_pr1() {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn __aeabi_unwind_cpp_pr0() {}

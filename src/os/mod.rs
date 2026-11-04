@@ -94,7 +94,7 @@ pub enum PseudoHandle {
 
 impl super::svc::FromRegister for OwnedHandle {
     unsafe fn from_register(reg: u32) -> Self {
-        OwnedHandle::new(reg).expect("Register contained an invalid Handle")
+        unsafe { OwnedHandle::new(reg).expect("Register contained an invalid Handle") }
     }
 }
 
@@ -126,7 +126,7 @@ impl MemoryRegion {
             MemoryRegion::All => {
                 return MemoryRegion::Application.size()
                     + MemoryRegion::System.size()
-                    + MemoryRegion::Base.size()
+                    + MemoryRegion::Base.size();
             }
             MemoryRegion::Application => cfgmem::APPMEMALLOC,
             MemoryRegion::System => cfgmem::SYSMEMALLOC,

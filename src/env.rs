@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-extern "C" {
+unsafe extern "C" {
     static __apt_appid: u32;
     static __heap_size: u32;
     static __service_ptr: *const u8;

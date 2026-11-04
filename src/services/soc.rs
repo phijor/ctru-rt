@@ -6,15 +6,15 @@ use crate::ports::srv::Srv;
 use crate::{
     heap::PageAlignedBuffer,
     ipc::{CommandBufferWriter, IpcRequest, IpcResult, Parameter, ThisProcessId},
-    os::{mem::MemoryPermission, AsHandle, OwnedHandle},
+    os::{AsHandle, OwnedHandle, mem::MemoryPermission},
     result::{ErrorCode as SystemErrorCode, Result as SystemResult},
     svc, tls,
 };
 
 use core::{marker::PhantomData, num::NonZeroU32};
 
-use num_enum::IntoPrimitive;
 use log::debug;
+use num_enum::IntoPrimitive;
 
 #[derive(Debug)]
 pub struct Soc {

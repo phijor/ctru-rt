@@ -39,7 +39,7 @@ pub struct ErrorCode(NonZeroU32);
 
 impl ErrorCode {
     pub const unsafe fn new_unchecked(ec: u32) -> Self {
-        Self(NonZeroU32::new_unchecked(ec))
+        unsafe { Self(NonZeroU32::new_unchecked(ec)) }
     }
 
     pub const fn new(level: Level, summary: Summary, module: Module, description: u32) -> Self {

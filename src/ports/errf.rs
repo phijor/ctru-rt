@@ -12,7 +12,7 @@ use num_enum::IntoPrimitive;
 
 use core::mem::{size_of, size_of_val};
 
-extern "C" {
+unsafe extern "C" {
     #[link_name = "llvm.returnaddress"]
     fn returnaddress(frame: i32) -> *const u8;
 }

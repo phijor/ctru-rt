@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::ipc::{IpcRequest, StaticBuffer};
-use crate::os::mem::MemoryPermission;
 use crate::os::PseudoHandle;
+use crate::os::mem::MemoryPermission;
 use crate::os::{
-    sharedmem::{MappedBlock, SharedMemoryMapper},
     AsHandle, BorrowedHandle, OwnedHandle,
+    sharedmem::{MappedBlock, SharedMemoryMapper},
 };
 use crate::ports::srv::Srv;
 use crate::result::{ErrorCode, Result};
@@ -17,7 +17,7 @@ use crate::sync::{Event, ResetType};
 use log::{debug, info, trace};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoPrimitive)]
 #[repr(usize)]
@@ -247,7 +247,10 @@ impl FramebufferInfo {
         stride: u32,
         format: u32,
     ) {
-        trace!("Updating framebuffer: active = {:?}, left = {:p}, right = {:p}, stride = {}, format = {:b}", active_fb, left, right, stride, format);
+        trace!(
+            "Updating framebuffer: active = {:?}, left = {:p}, right = {:p}, stride = {}, format = {:b}",
+            active_fb, left, right, stride, format
+        );
         {
             let fb_info = {
                 let active_fb = u8::from(active_fb) as u32;
@@ -308,8 +311,10 @@ impl InterruptInfo {
     }
 
     unsafe fn read_event(&self, index: u8) -> InterruptEvent {
-        let current_event_ptr = self.event_buf.add(0xC + usize::from(index)) as *const AtomicU8;
-        let event_packed = (&*current_event_ptr).load(Ordering::SeqCst);
+        let event_packed = unsafe {
+            let current_event_ptr = self.event_buf.add(0xC + usize::from(index)) as *const AtomicU8;
+            (&*current_event_ptr).load(Ordering::SeqCst)
+        };
 
         match InterruptEvent::try_from(event_packed) {
             Err(e) => {
@@ -360,11 +365,7 @@ impl Sharedmem {
 
             let next_index = {
                 let next = header.current_index + 1;
-                if next >= 0x34 {
-                    0
-                } else {
-                    next
-                }
+                if next >= 0x34 { 0 } else { next }
             };
 
             let acknowledged = InterruptHeader {
@@ -388,11 +389,15 @@ impl Sharedmem {
         const SIZE: usize = 0x20;
         const SCREEN_OFFSET: usize = 0x10;
 
-        let base = self.shared_memory.as_mut_ptr().add(INFO_BASE);
         let screen_offset = usize::from(screen) * SCREEN_OFFSET;
-        let info = base
-            .add(self.gsp_module_thread_index as usize * SIZE)
-            .add(screen_offset);
+
+        let info = unsafe {
+            self.shared_memory
+                .as_mut_ptr()
+                .add(INFO_BASE)
+                .add(self.gsp_module_thread_index as usize * SIZE)
+                .add(screen_offset)
+        };
 
         FramebufferInfo { info }
     }
@@ -629,9 +634,7 @@ impl Gpu {
             let register = GPU_REG_BASE + register_offset;
             trace!(
                 "Writing GSP register: {:#08x} = {:#08x} (mask: {:08x?})",
-                register,
-                value,
-                mask
+                register, value, mask
             );
             match mask {
                 None => {

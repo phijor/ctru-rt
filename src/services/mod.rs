@@ -4,9 +4,9 @@
 
 pub mod ac;
 pub mod apt;
+pub mod fs;
 pub mod gsp;
 pub mod hid;
 pub mod soc;
-pub mod fs;
 
 pub trait Service: Default {}

@@ -14,7 +14,7 @@ use ctru_rt::{
     ports::srv::Srv,
     result::Result,
     services::hid::Hid,
-    svc::{sleep_thread, Timeout},
+    svc::{Timeout, sleep_thread},
 };
 
 #[panic_handler]

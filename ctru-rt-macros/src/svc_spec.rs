@@ -8,8 +8,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Paren;
-use syn::{parenthesized, Ident, LitInt, LitStr, Result, Token, Type, TypeNever, TypeTuple};
 use syn::{Attribute, Error};
+use syn::{Ident, LitInt, LitStr, Result, Token, Type, TypeNever, TypeTuple, parenthesized};
 
 use itertools::MultiUnzip;
 
@@ -36,7 +36,7 @@ impl InputParameterSpec {
             "split" => Ok(Some(())),
             unknown => Err(Error::new(
                 name.span(),
-                &format!(r#"Unknown attribute "{}", expected "split""#, unknown),
+                format!(r#"Unknown attribute "{}", expected "split""#, unknown),
             )),
         }
     }
@@ -237,7 +237,7 @@ impl SvcSpec {
 
         let inputs = self.input.parameters();
 
-        let asm_call = if let Some((result, output)) = self.output.parameters() {
+        if let Some((result, output)) = self.output.parameters() {
             let result_code = result.ident.clone();
             let result_decl = result.declaration();
             let result_register = result.register_spec();
@@ -296,9 +296,7 @@ impl SvcSpec {
             // The call does not return, so nothing can observe clobbered registers.
             let inputs = inputs.iter().map(|param| param.register_spec(false));
             quote! { core::arch::asm!(#svc_mnemonic, #(#inputs,)* options(noreturn, nostack)) }
-        };
-
-        asm_call
+        }
     }
 }
 

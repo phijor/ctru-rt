@@ -5,10 +5,10 @@
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use super::{
-    mem::{MemoryPermission, MemoryState, QueryResult},
     OwnedHandle,
+    mem::{MemoryPermission, MemoryState, QueryResult},
 };
-use crate::result::{Result, ERROR_OUT_OF_MEMORY};
+use crate::result::{ERROR_OUT_OF_MEMORY, Result};
 use crate::svc;
 
 use log::debug;
@@ -44,10 +44,12 @@ impl MappedBlock {
     }
 
     pub unsafe fn as_mut_slice_raw(&mut self) -> &mut [u32] {
-        core::slice::from_raw_parts_mut(
-            self.start as *mut u32,
-            self.size / core::mem::size_of::<u32>(),
-        )
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self.start as *mut u32,
+                self.size / core::mem::size_of::<u32>(),
+            )
+        }
     }
 }
 
@@ -138,12 +140,11 @@ impl SharedMemoryMapper {
         {
             let block: QueryResult = unsafe { svc::query_memory(candidate_addr)? };
 
-            if let MemoryState::Free = block.state {
-                if let Some(free) = Self::remaining_free(&block, candidate_addr) {
-                    if free >= size {
-                        return Ok(Some(candidate_addr));
-                    }
-                }
+            if let MemoryState::Free = block.state
+                && let Some(free) = Self::remaining_free(&block, candidate_addr)
+                && free >= size
+            {
+                return Ok(Some(candidate_addr));
             };
 
             match candidate_addr.checked_add(block.size) {

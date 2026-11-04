@@ -3,14 +3,14 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::{
-    ipc::{IpcRequest, ThisProcessId},
+    ipc::{CommandBufferWriter, IpcRequest, Parameter, ThisProcessId},
     os::{AsHandle, OwnedHandle},
-    result::{Result, ERROR_NOT_AUTHORIZED},
+    result::{ERROR_NOT_AUTHORIZED, Result},
     svc,
 };
 
-use num_enum::{FromPrimitive, IntoPrimitive};
 use log::debug;
+use num_enum::{FromPrimitive, IntoPrimitive};
 
 #[derive(Debug, Copy, Clone, FromPrimitive, IntoPrimitive)]
 #[repr(u32)]
@@ -62,9 +62,9 @@ impl Srv {
     }
 
     pub fn register_service(&self, service_name: &str, max_sessions: u32) -> Result<OwnedHandle> {
-        let ((name0, name1), len) = unsafe { write_str_param(service_name) };
         let mut reply = IpcRequest::command(0x3)
-            .parameters(&[name0, name1, len, max_sessions])
+            .parameter(StringParam::new(service_name))
+            .parameter(max_sessions)
             .dispatch(&self.handle)?
             .finish_results();
 
@@ -72,19 +72,17 @@ impl Srv {
     }
 
     pub fn unregister_service(&self, service_name: &str) -> Result<()> {
-        let ((name0, name1), len) = unsafe { write_str_param(service_name) };
         let _reply = IpcRequest::command(0x4)
-            .parameters(&[name0, name1, len])
+            .parameter(StringParam::new(service_name))
             .dispatch(self.as_handle())?;
 
         Ok(())
     }
 
     pub fn get_service_handle(&self, service_name: &str) -> Result<OwnedHandle> {
-        let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
-
         let mut reply = IpcRequest::command(0x5)
-            .parameters(&[arg0, arg1, len, u32::from(self.blocking_policy)])
+            .parameter(StringParam::new(service_name))
+            .parameter(u32::from(self.blocking_policy))
             .dispatch(self.as_handle())?
             .finish_results();
 
@@ -173,9 +171,8 @@ impl Srv {
     }
 
     pub fn is_service_registered(&self, service_name: &str) -> Result<bool> {
-        let ((arg0, arg1), len) = unsafe { write_str_param(service_name) };
         let mut reply = IpcRequest::command(0xe)
-            .parameters(&[arg0, arg1, len])
+            .parameter(StringParam::new(service_name))
             .dispatch(self.as_handle())?;
 
         Ok(reply.read_word() != 0)
@@ -186,19 +183,40 @@ fn publish_flags(coalesc_pending: bool, ignore_overflow: bool) -> u32 {
     u32::from(coalesc_pending) | u32::from(ignore_overflow) << 1
 }
 
-unsafe fn write_str_param(s: &str) -> ((u32, u32), u32) {
-    union Buf {
-        words: [u32; 2],
-        bytes: [u8; 2 * 4],
+struct StringParam {
+    words: [u32; 2],
+    len: usize,
+}
+
+impl StringParam {
+    fn new(s: &str) -> StringParam {
+        const BUF_WORDS: usize = 2;
+        const BUF_BYTES: usize = BUF_WORDS * size_of::<u32>();
+
+        union Buf {
+            words: [u32; BUF_WORDS],
+            bytes: [u8; BUF_BYTES],
+        }
+
+        let mut buf: Buf = Buf { words: [0; _] };
+
+        let bytes = s.as_bytes();
+        let len = bytes.len().min(BUF_BYTES);
+
+        // Copy at most BUF_BYTES from the string
+        unsafe { buf.bytes[..len].copy_from_slice(&bytes[..len]) };
+        let words = unsafe { buf.words };
+
+        Self { words, len }
     }
+}
 
-    let mut buf: Buf = Buf { words: [0; 2] };
-
-    let s_bytes = s.as_bytes();
-    let n = buf.bytes.len().min(s_bytes.len());
-
-    buf.bytes[..n].copy_from_slice(&s_bytes[..n]);
-    ((buf.words[0], buf.words[1]), n as u32)
+impl Parameter for StringParam {
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        self.words[0].encode(cmdbuf);
+        self.words[1].encode(cmdbuf);
+        self.len.encode(cmdbuf)
+    }
 }
 
 impl AsHandle for Srv {

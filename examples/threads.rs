@@ -70,7 +70,7 @@ fn run() -> Result<()> {
                     info!("Done in thread id={id}");
 
                     // Return this thread's ID.
-                    return id;
+                    id
                 })?;
             Ok((id, thread))
         })
@@ -89,9 +89,7 @@ fn run() -> Result<()> {
         info!("Got signal {}", signaled_idx);
         done_events.get(signaled_idx).map(|ev| ev.clear());
 
-        let thread = if let Some(thread) = threads.remove(&signaled_idx) {
-            thread
-        } else {
+        let Some(thread) = threads.remove(&signaled_idx) else {
             warn!("Event {} signaled again!", signaled_idx);
             continue;
         };

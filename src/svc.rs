@@ -2,16 +2,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::os::AsHandle;
 use crate::os::mem::MemoryState;
 use crate::os::reslimit::LimitType;
-use crate::os::AsHandle;
 use crate::{
     os::{
-        mem::{MemoryOperation, MemoryPermission, QueryResult},
         BorrowedHandle, OwnedHandle, RawHandle,
+        mem::{MemoryOperation, MemoryPermission, QueryResult},
     },
     result::Result,
-    sync::{arbitrate::ArbitrationType, ResetType},
+    sync::{ResetType, arbitrate::ArbitrationType},
 };
 
 use core::arch::asm;
@@ -110,8 +110,8 @@ pub unsafe fn query_memory(addr: usize) -> Result<QueryResult> {
         svc!(0x02: (_, _, addr) -> (usize, usize, u32, u32, u32))?;
 
     // TODO: yeah, let's hope the kernel always returns valid values here
-    let permission: MemoryPermission = core::mem::transmute(permission);
-    let state: MemoryState = core::mem::transmute(state);
+    let permission: MemoryPermission = unsafe { core::mem::transmute(permission) };
+    let state: MemoryState = unsafe { core::mem::transmute(state) };
 
     Ok(QueryResult {
         base_process_virtual_address,

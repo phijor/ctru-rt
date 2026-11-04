@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::os::{AsHandle, OwnedHandle};
-use crate::result::{Result, ERROR_ALREADY_INITIALIZED};
+use crate::result::{ERROR_ALREADY_INITIALIZED, Result};
 use crate::svc::{self, Timeout};
 use crate::sync::AtomicHandle;
 
