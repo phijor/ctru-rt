@@ -14,7 +14,7 @@ panic = "abort"
 
 [dependencies]
 ctru-rt-macros = { path = "ctru-rt-macros" }
-log = { version = "0.4", default-features = false, features = ["max_level_trace", "release_max_level_info"] }
+log = { version = "0.4", default-features = false, features = ["max_level_trace", "release_max_level_debug"] }
 num_enum = { version = "0.7.0", default-features = false, features = [] }
 talc = "5.1.1"
 utf16_lit = "2.0.2"
