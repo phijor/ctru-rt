@@ -126,8 +126,14 @@ pub fn exit_process() -> ! {
     unsafe { svc!(0x03: () -> !) }
 }
 
-/// # SAFETY:
-///     * `stacktop` must be aligned to 8 bytes
+/// Create a new thread on the specified processor.
+///
+/// In the newly spawned thread, `argument` is passed to `entry_point`.
+/// Thread `priority` is in the range of `[0x18, 0x30]`, lower values mean higher priority.
+///
+/// # Safety
+///
+/// `stacktop` must point to an 8-byte aligned allocation.
 pub unsafe fn create_thread(
     priority: i32,
     entry_point: unsafe extern "C" fn(usize),
