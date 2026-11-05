@@ -690,7 +690,7 @@ impl Gpu {
     /// Use this before reading memory to make GPU writes visible to the current process.
     ///
     /// The counterpart to [`Self::flush_data_cache`].  Instructs the GSP module to call
-    /// [`crate::svc::invalidate_data_cache`] for the current process.
+    /// [`crate::svc::invalidate_process_data_cache`] for the current process.
     pub fn invalidate_data_cache(&mut self, addr: *const u8, size: usize) -> Result<()> {
         let _ = IpcRequest::command(0x09)
             .parameters(&[addr as u32, size as u32])
