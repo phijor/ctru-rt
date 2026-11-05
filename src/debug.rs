@@ -4,6 +4,7 @@
 
 use crate::svc::{output_debug_bytes, output_debug_string};
 
+pub use log;
 use log::{Level, Log, Metadata, Record};
 
 use alloc::fmt;

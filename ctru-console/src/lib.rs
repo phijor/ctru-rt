@@ -7,9 +7,12 @@
 extern crate alloc;
 
 use alloc::{boxed::Box, vec};
-use core::ops::Range;
+use core::{
+    fmt::{self, Write},
+    ops::{DerefMut, Range},
+};
 
-use ctru_rt::{graphics::Graphics, services::gsp::gpu::Screen};
+use ctru_rt::{debug::log, graphics::Graphics, services::gsp::gpu::Screen, sync::arbitrate::Mutex};
 
 /// `build.rs` generates a binary blob containing glyphs extracted from a BDF font.
 /// The blob consists of a 4 byte header, followed by an array of glyph bitmaps.
@@ -266,9 +269,72 @@ impl Console {
     }
 }
 
-impl core::fmt::Write for Console {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+impl Write for Console {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
         self.put_str(s);
         Ok(())
     }
+}
+
+/// Allocate a [`Console`] and set it as the default logger.
+///
+/// The console will render to `screen` and log messages at `level` or below.
+///
+/// Returns a reference to the [`ConsoleLog`] on success. This is a `'static` reference
+/// since loggers set via [`log::set_logger`] remain installed for the entire program lifetime.
+/// Use [`ConsoleLog::with_console`] to access the underlying console for rendering.
+pub fn init_log(
+    screen: Screen,
+    level: log::LevelFilter,
+) -> Result<&'static ConsoleLog, log::SetLoggerError> {
+    // `log` keeps logers installed for the remainder of the program lifetime.
+    // Since there is no way to reclaim its resources anyway, we leak it here.
+    let logger: &'static ConsoleLog = Box::leak(Box::new(ConsoleLog {
+        console: Mutex::new(Console::new(screen)),
+    }));
+
+    log::set_logger(logger)?;
+    log::set_max_level(level);
+
+    Ok(logger)
+}
+
+/// A thread-safe wrapper around [`Console`] that implements [`log::Log`].
+///
+/// Use [`Self::with_console`] to access the underlying console.
+pub struct ConsoleLog {
+    console: Mutex<Console>,
+}
+
+impl ConsoleLog {
+    /// Get exclusive access to the underlying console.
+    #[inline]
+    pub fn with_console<F, O>(&self, f: F) -> O
+    where
+        F: FnOnce(&mut Console) -> O,
+    {
+        f(self.console.lock().deref_mut())
+    }
+}
+
+impl log::Log for ConsoleLog {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Trace
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            let level = record.level().as_str().chars().next().unwrap_or('?');
+            let args = record.args();
+
+            self.with_console(|console| {
+                let Ok(_) = writeln!(console, "[{level}] {args}") else {
+                    ctru_rt::early_debug!("Failed to log to console");
+                    return;
+                };
+            })
+        }
+    }
+
+    fn flush(&self) {}
 }
