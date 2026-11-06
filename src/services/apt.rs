@@ -8,7 +8,7 @@ use core::ops::Deref;
 use num_enum::IntoPrimitive;
 
 use crate::ipc::{CommandBufferWriter, IpcRequest, Parameter, StaticBuffer};
-use crate::os::{AsHandle, BorrowedHandle, OwnedHandle};
+use crate::os::{AsHandle, BorrowedHandle, OwnedHandle, ValidRawHandle};
 use crate::ports::srv::Srv;
 use crate::result::Result;
 use crate::sync::{Event, Mutex, OsMutex};
@@ -112,13 +112,17 @@ impl<'access, 'srv> Apt<'access, 'srv> {
         Ok(())
     }
 
-    fn close_application(&self, payload: &[u32], handle: BorrowedHandle) -> Result<()> {
+    fn close_application_raw(&self, payload: &[u32], handle: Option<ValidRawHandle>) -> Result<()> {
         let _ = IpcRequest::command(0x27)
             .parameter(size_of_val(payload))
             .translate_parameter(handle)
             .translate_parameter(StaticBuffer::from_u32_slice(payload, 0))
             .dispatch(&self.handle)?;
         Ok(())
+    }
+
+    fn close_application(&self, payload: &[u32]) -> Result<()> {
+        self.close_application_raw(payload, None)
     }
 
     fn prepare_to_do_application_jump(

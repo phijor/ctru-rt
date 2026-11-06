@@ -9,7 +9,7 @@ mod request;
 use self::reply::CommandBufferReader;
 pub(crate) use self::request::{CommandBufferWriter, IpcRequest};
 
-use crate::os::{BorrowedHandle, OwnedHandle, RawHandle};
+use crate::os::{BorrowedHandle, OwnedHandle, RawHandle, ValidRawHandle};
 use crate::result::{ResultCode, ResultValue};
 use crate::tls;
 
@@ -272,6 +272,19 @@ impl<'h> TranslateParameter for BorrowedHandle<'h> {
         let header = TYPE_HANDLE;
         cmdbuf.write(header);
         cmdbuf.write(self.handle)
+    }
+}
+
+impl TranslateParameter for Option<ValidRawHandle> {
+    #[inline(always)]
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        let header = TYPE_HANDLE;
+        let handle: u32 = match self {
+            Some(handle) => handle.get(),
+            None => 0,
+        };
+        cmdbuf.write(header);
+        cmdbuf.write(handle)
     }
 }
 
