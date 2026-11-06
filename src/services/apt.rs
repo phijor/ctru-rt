@@ -2,16 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use core::marker::PhantomData;
 use core::ops::Deref;
 
 use num_enum::IntoPrimitive;
 
 use crate::ipc::{CommandBufferWriter, IpcRequest, Parameter, StaticBuffer};
-use crate::os::{AsHandle, BorrowedHandle, OwnedHandle, ValidRawHandle};
-use crate::ports::srv::Srv;
+use crate::os::{OwnedHandle, ValidRawHandle};
+use crate::ports::srv::{LazyServiceSession, Srv};
 use crate::result::Result;
-use crate::sync::{Event, Mutex, OsMutex};
+use crate::sync::{Event, Mutex, MutexGuard, OsMutex};
 
 const APT_SERVICE_NAMES: [&str; 3] = ["APT:S", "APT:A", "APT:U"];
 
@@ -42,17 +41,13 @@ impl Parameter for AppletAttributes {
     }
 }
 
-pub struct Apt<'access, 'srv> {
+pub struct Apt {
     handle: OwnedHandle,
-    _access: PhantomData<&'access mut AptAccess<'srv>>,
 }
-impl<'access, 'srv> Apt<'access, 'srv> {
-    fn new(handle: OwnedHandle, access: &'access mut AptAccess<'srv>) -> Self {
-        let _ = access;
-        Self {
-            handle,
-            _access: PhantomData,
-        }
+
+impl Apt {
+    fn new(handle: OwnedHandle) -> Self {
+        Self { handle }
     }
 
     fn get_lock(&self, flags: u16) -> Result<OsMutex> {
@@ -69,17 +64,17 @@ impl<'access, 'srv> Apt<'access, 'srv> {
         Ok(unsafe { OsMutex::from_handle(lock_handle) })
     }
 
-    fn init(&self, app_id: AppId, attributes: AppletAttributes) -> Result<(Event, Event)> {
+    fn init(&self, app_id: AppId, attributes: AppletAttributes) -> Result<Events> {
         let reply = IpcRequest::command(0x02)
             .parameter(app_id)
             .parameter(attributes)
             .dispatch(&self.handle)?;
 
         let mut reply = reply.finish_results();
-        let signal_event = unsafe { Event::from_handle(reply.read_handle()) };
-        let resume_event = unsafe { Event::from_handle(reply.read_handle()) };
+        let signal = unsafe { Event::from_handle(reply.read_handle()) };
+        let resume = unsafe { Event::from_handle(reply.read_handle()) };
 
-        Ok((signal_event, resume_event))
+        Ok(Events { signal, resume })
     }
 
     fn enable(&self, attributes: AppletAttributes) -> Result<()> {
@@ -143,45 +138,47 @@ impl<'access, 'srv> Apt<'access, 'srv> {
     }
 }
 
-impl AsHandle for Apt<'_, '_> {
-    fn as_handle(&self) -> BorrowedHandle<'_> {
-        self.handle.as_handle()
+struct LazyApt {
+    session: LazyServiceSession,
+}
+
+impl LazyApt {
+    fn new(srv: Srv) -> Self {
+        Self {
+            session: LazyServiceSession::new(srv, &APT_SERVICE_NAMES),
+        }
     }
-}
 
-pub struct AptAccess<'srv> {
-    srv: &'srv Srv,
-    service_name_index: usize,
-}
-
-impl<'srv> AptAccess<'srv> {
-    fn aquire<'access>(&'access mut self) -> Result<Apt<'access, 'srv>> {
-        let (handle, matched_offset) = self
-            .srv
-            .get_service_handle_alternatives(&APT_SERVICE_NAMES[self.service_name_index..])?;
-        self.service_name_index += matched_offset;
-
-        Ok(Apt::new(handle, self))
-    }
-}
-
-pub struct AptLock<'srv> {
-    access: Mutex<AptAccess<'srv>>,
-}
-
-impl<'srv> AptLock<'srv> {
-    pub fn init(srv: &'srv mut Srv) -> Result<Self> {
-        let mut access = AptAccess {
-            srv,
-            service_name_index: 0,
-        };
-
-        let apt = access.aquire()?;
+    fn init(srv: Srv) -> Result<Mutex<Self>> {
+        let mut apt = Self::new(srv);
 
         const FLAGS: u16 = 0x0;
-        let mutex = apt.get_lock(FLAGS)?;
+        let mutex = apt.open_session()?.get_lock(FLAGS)?;
 
-        let (_signal_event, _resume_event) = apt.init(
+        Ok(Mutex::const_new(mutex, apt))
+    }
+
+    fn open_session(&mut self) -> Result<Apt> {
+        self.session.open().map(Apt::new)
+    }
+}
+
+#[repr(C)]
+struct Events {
+    signal: Event,
+    resume: Event,
+}
+
+pub struct AptLock {
+    events: Events,
+    apt: Mutex<LazyApt>,
+}
+
+impl AptLock {
+    pub fn init(srv: Srv) -> Result<Self> {
+        let apt = LazyApt::init(srv)?;
+
+        let events = apt.lock().open_session()?.init(
             AppId::Application,
             AppletAttributes::new()
                 .position(AppPosition::App)
@@ -189,17 +186,28 @@ impl<'srv> AptLock<'srv> {
                 .manual_dsp_rights(),
         )?;
 
-        let access = Mutex::const_new(mutex, access);
+        Ok(Self { events, apt })
+    }
 
-        Ok(Self { access })
+    pub fn lock(&self) -> Result<AptGuard<'_>> {
+        let mut guard = self.apt.lock();
+        let apt = guard.open_session()?;
+
+        Ok(AptGuard { apt, _guard: guard })
     }
 }
 
-impl<'srv> Deref for AptLock<'srv> {
-    type Target = Mutex<AptAccess<'srv>>;
+pub struct AptGuard<'lock> {
+    // Fields in drop order:
+    apt: Apt,                           // 1. close the APT session,
+    _guard: MutexGuard<'lock, LazyApt>, // 2. release the access lock.
+}
+
+impl Deref for AptGuard<'_> {
+    type Target = Apt;
 
     fn deref(&self) -> &Self::Target {
-        &self.access
+        &self.apt
     }
 }
 
