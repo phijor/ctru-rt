@@ -39,6 +39,14 @@ impl Srv {
         Ok(srv)
     }
 
+    pub fn try_duplicate(&self) -> Result<Self> {
+        let handle = self.handle.try_duplicate()?;
+        Ok(Self {
+            handle,
+            blocking_policy: self.blocking_policy,
+        })
+    }
+
     pub fn blocking_policy(&self) -> BlockingPolicy {
         self.blocking_policy
     }
