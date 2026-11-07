@@ -224,3 +224,23 @@ impl AsHandle for Srv {
         self.handle.as_handle()
     }
 }
+
+pub struct LazyServiceSession {
+    srv: Srv,
+    service_names: &'static [&'static str],
+}
+
+impl LazyServiceSession {
+    pub fn new(srv: Srv, service_names: &'static [&'static str]) -> Self {
+        Self { srv, service_names }
+    }
+
+    pub fn open(&mut self) -> Result<OwnedHandle> {
+        let (handle, matched_offset) = self
+            .srv
+            .get_service_handle_alternatives(self.service_names)?;
+        self.service_names = &self.service_names[matched_offset..];
+
+        Ok(handle)
+    }
+}
