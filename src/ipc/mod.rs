@@ -288,6 +288,16 @@ impl TranslateParameter for Option<ValidRawHandle> {
     }
 }
 
+impl TranslateResult for Option<OwnedHandle> {
+    unsafe fn decode(cmdbuf: &mut CommandBufferReader) -> Self {
+        let header = cmdbuf.read();
+        let num_handles = (header >> 26) + 1;
+        debug_assert_eq!(num_handles, 1);
+
+        unsafe { OwnedHandle::new(cmdbuf.read()) }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct ThisProcessId;
 
