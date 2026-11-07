@@ -8,7 +8,7 @@ use crate::{
     ipc::{CommandBufferWriter, IpcRequest, IpcResult, Parameter, ThisProcessId},
     os::{AsHandle, OwnedHandle, mem::MemoryPermission},
     result::{ErrorCode as SystemErrorCode, Result as SystemResult},
-    svc, tls,
+    svc,
 };
 
 use core::{marker::PhantomData, num::NonZeroU32};
@@ -84,16 +84,11 @@ impl Soc {
     pub fn accept(&self, fd: &SocketFd<'_>) -> SystemResult<SocketAddress> {
         let mut address_data = [0; 0x1c];
 
-        let tls = tls::get_thread_local_storage();
-        let mut buffer_descriptors = tls.static_buffer_descriptors();
-
-        buffer_descriptors.set(0, &mut address_data);
-
         let _reply = IpcRequest::command(0x4)
             .parameter(fd)
             .parameter(address_data.len())
             .translate_parameter(ThisProcessId)
-            .dispatch(&self.handle)?;
+            .dispatch_with_receive_buffers(&self.handle, &mut [&mut address_data])?;
 
         unimplemented!()
     }

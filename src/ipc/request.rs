@@ -5,6 +5,7 @@
 use crate::os::{AsHandle, BorrowedHandle};
 use crate::result::{Result, ResultCode};
 use crate::svc;
+use crate::tls::get_thread_local_storage;
 
 use super::reply::IpcReply;
 use super::{CommandBuffer, IpcHeader, Parameter, TranslateParameter, state};
@@ -126,7 +127,11 @@ impl<S: state::State> IpcRequest<S> {
     }
 
     #[inline]
-    pub fn dispatch_impl(self, receiver: BorrowedHandle) -> Result<(ResultCode, IpcReply)> {
+    pub fn dispatch_impl<const N: usize>(
+        self,
+        receiver: BorrowedHandle,
+        receive_buffers: &mut [&mut [u8]; N],
+    ) -> Result<(ResultCode, IpcReply)> {
         let cmdbuf = self.cmdbuf.finish();
         let header = IpcHeader::new(
             self.id,
@@ -139,15 +144,21 @@ impl<S: state::State> IpcRequest<S> {
         // Write IPC header
         unsafe { cmdbuf.start().write(header.into()) }
 
-        let mut reply = match unsafe { svc::send_sync_request(receiver, cmdbuf.into_inner()) } {
-            Ok(reply_buffer) => unsafe { IpcReply::new(reply_buffer) },
-            Err(e) => {
-                error!(
-                    "`svc::send_sync_request` failed: receiver = {:?}, err = {:?}",
-                    receiver, e
-                );
-                return Err(e);
-            }
+        let request = || unsafe {
+            svc::send_sync_request(receiver, cmdbuf.into_inner())
+                .map(|reply_buffer| IpcReply::new(reply_buffer))
+                .inspect_err(|err| {
+                    error!(
+                        "`svc::send_sync_request` failed: receiver = {receiver:?}, err = {err:?}"
+                    );
+                })
+        };
+        let mut reply: IpcReply = if N == 0 {
+            request()?
+        } else {
+            // Set the receive buffer descriptors to point to `receive_buffers`
+            // before sending the request, then clear them after.
+            get_thread_local_storage().with_receive_buffers(receive_buffers, request)?
         };
 
         let result = reply.read_result::<ResultCode>();
@@ -159,12 +170,24 @@ impl<S: state::State> IpcRequest<S> {
         self,
         receiver: Handle,
     ) -> Result<(ResultCode, IpcReply)> {
-        self.dispatch_impl(receiver.as_handle())
+        self.dispatch_impl(receiver.as_handle(), &mut [])
     }
 
     #[inline]
     pub fn dispatch<Handle: AsHandle>(self, receiver: Handle) -> Result<IpcReply> {
         let (result, reply) = self.dispatch_no_fail(receiver)?;
+        result.into_result()?;
+
+        Ok(reply)
+    }
+
+    #[inline]
+    pub fn dispatch_with_receive_buffers<const N: usize, Handle: AsHandle>(
+        self,
+        receiver: Handle,
+        receive_buffers: &mut [&mut [u8]; N],
+    ) -> Result<IpcReply> {
+        let (result, reply) = self.dispatch_impl(receiver.as_handle(), receive_buffers)?;
         result.into_result()?;
 
         Ok(reply)

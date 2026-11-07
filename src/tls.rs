@@ -18,8 +18,19 @@ impl ThreadLocalStorage {
     }
 
     #[inline]
-    pub fn static_buffer_descriptors(&self) -> StaticBufferDescriptors<'_> {
-        unsafe { StaticBufferDescriptors::new(self.0.add(0x180) as *mut u32) }
+    unsafe fn static_buffer_descriptors<const N: usize>(&self) -> *mut [Descriptor; N] {
+        unsafe { self.0.add(0x180) as *mut [Descriptor; N] }
+    }
+
+    pub(crate) fn with_receive_buffers<const N: usize, R>(
+        &mut self,
+        buffers: &mut [&mut [u8]; N],
+        f: impl FnOnce() -> R,
+    ) -> R {
+        let descriptors = unsafe { StaticBufferDescriptors::set(self, buffers) };
+        let result = f();
+        drop(descriptors);
+        result
     }
 }
 
@@ -35,34 +46,76 @@ pub fn get_thread_local_storage() -> ThreadLocalStorage {
     ThreadLocalStorage(data)
 }
 
-#[repr(packed, C)]
-struct Descriptor<'a> {
+#[repr(C)]
+struct Descriptor {
     flags: u32,
-    ptr: *mut (),
-    _lifetime: PhantomData<&'a [u8]>,
+    ptr: *mut u8,
 }
 
-pub struct StaticBufferDescriptors<'a> {
-    descriptors: *mut Descriptor<'a>,
-}
+impl Descriptor {
+    #[inline]
+    fn from_slice(data: &mut [u8]) -> Self {
+        let size = core::mem::size_of_val(data);
 
-impl<'a> StaticBufferDescriptors<'a> {
-    unsafe fn new(ptr: *mut u32) -> Self {
-        Self {
-            descriptors: ptr as *mut Descriptor<'a>,
-        }
+        assert!(size <= 0x3FFFF, "Static buffer size too large");
+
+        let flags = (1 << 1) | (size << 14) as u32;
+        let ptr = data.as_mut_ptr();
+        Self { flags, ptr }
     }
 
-    pub fn set<T: 'a>(&mut self, index: usize, data: &'a mut [T]) {
-        let index = index & 0b1111;
-        let flags = (1 << 1) | (core::mem::size_of_val(data) << 14) as u32 | (index << 10) as u32;
+    #[inline]
+    const fn invalid() -> Self {
+        Self {
+            flags: 0,
+            ptr: core::ptr::null_mut(),
+        }
+    }
+}
 
-        unsafe {
-            self.descriptors.add(index).write(Descriptor {
-                flags,
-                ptr: data.as_ptr() as *mut (),
-                _lifetime: PhantomData,
-            })
+struct StaticBufferDescriptors<'tls, 'buf, const N: usize> {
+    descriptors: *mut [Descriptor; N],
+    _tls: PhantomData<&'tls mut ThreadLocalStorage>,
+    _buf: PhantomData<&'buf mut [u8]>,
+}
+
+impl<'tls, 'buf, const N: usize> StaticBufferDescriptors<'tls, 'buf, N> {
+    /// Set the first `N` descriptors to point to some buffers.
+    ///
+    /// # Safety
+    ///
+    /// The returned guard must not be leaked: its destructor ensures that the pointers to `buffers` are removed from
+    /// the buffer descriptors, and replaced by null pointers.
+    unsafe fn set(tls: &'tls mut ThreadLocalStorage, buffers: &'buf mut [&mut [u8]; N]) -> Self {
+        const { assert!(N <= 16, "Cannot set more than 16 receive buffers") };
+
+        let descriptors = unsafe { tls.static_buffer_descriptors() };
+
+        let mut descriptor = descriptors as *mut Descriptor;
+        for buffer in buffers.iter_mut() {
+            unsafe {
+                descriptor.write(Descriptor::from_slice(buffer));
+                descriptor = descriptor.add(1);
+            };
+        }
+
+        Self {
+            descriptors,
+            _tls: PhantomData,
+            _buf: PhantomData,
+        }
+    }
+}
+
+impl<const N: usize> Drop for StaticBufferDescriptors<'_, '_, N> {
+    fn drop(&mut self) {
+        // Set the first `N` descriptors to point to [`core::ptr::null_mut`].
+        let mut descriptor = self.descriptors as *mut Descriptor;
+        for _ in 0..N {
+            unsafe {
+                descriptor.write(Descriptor::invalid());
+                descriptor = descriptor.add(1);
+            };
         }
     }
 }
