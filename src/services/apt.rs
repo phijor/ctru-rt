@@ -4,12 +4,14 @@
 
 use core::ops::Deref;
 
-use num_enum::IntoPrimitive;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::ipc::{CommandBufferWriter, IpcRequest, Parameter, StaticBuffer};
+use crate::env;
+use crate::ipc::{self, CommandBufferWriter, IpcRequest, StaticBuffer};
 use crate::os::{OwnedHandle, ValidRawHandle};
 use crate::ports::srv::{LazyServiceSession, Srv};
 use crate::result::Result;
+use crate::svc::Timeout;
 use crate::sync::{Event, Mutex, MutexGuard, OsMutex};
 
 const APT_SERVICE_NAMES: [&str; 3] = ["APT:S", "APT:A", "APT:U"];
@@ -35,7 +37,7 @@ impl AppletAttributes {
     }
 }
 
-impl Parameter for AppletAttributes {
+impl ipc::Parameter for AppletAttributes {
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(self.0.into())
     }
@@ -64,20 +66,32 @@ impl Apt {
         Ok(unsafe { OsMutex::from_handle(lock_handle) })
     }
 
-    fn init(&self, app_id: AppId, attributes: AppletAttributes) -> Result<Events> {
+    /// Attach to APT under the given [`AppId`].
+    ///
+    /// Fails if an applet with this [`AppletAttributes::position`] is already attached.
+    /// Returns event handles that signal pending APT events (parameters and notifications).
+    ///
+    /// This is [`APT:Initialize`](https://www.3dbrew.org/wiki/APT:Initialize).
+    fn attach(&self, app_id: AppId, attributes: AppletAttributes) -> Result<Events> {
         let reply = IpcRequest::command(0x02)
             .parameter(app_id)
             .parameter(attributes)
             .dispatch(&self.handle)?;
 
         let mut reply = reply.finish_results();
-        let signal = unsafe { Event::from_handle(reply.read_handle()) };
-        let resume = unsafe { Event::from_handle(reply.read_handle()) };
+        let notification = unsafe { Event::from_handle(reply.read_handle()) };
+        let parameter = unsafe { Event::from_handle(reply.read_handle()) };
 
-        Ok(Events { signal, resume })
+        Ok(Events {
+            notification,
+            parameter,
+        })
     }
 
-    fn enable(&self, attributes: AppletAttributes) -> Result<()> {
+    /// Subscribe to parameter messages for the given attributes.
+    ///
+    /// This is [`APT:Enable`](https://www.3dbrew.org/wiki/APT:Enable).
+    fn subscribe_parameters(&self, attributes: AppletAttributes) -> Result<()> {
         let _ = IpcRequest::command(0x03)
             .parameter(attributes)
             .dispatch(&self.handle)?;
@@ -98,6 +112,27 @@ impl Apt {
         let is_registered = reply.read_word() != 0;
 
         Ok(is_registered)
+    }
+
+    fn receive_parameter(&self, app_id: AppId, buffer: &mut [u8]) -> Result<Parameter> {
+        let mut reply = IpcRequest::command(0x0d)
+            .parameter(app_id)
+            .parameter(buffer.len())
+            .dispatch_with_receive_buffers(&self.handle, &mut [buffer])?;
+
+        let sender = reply.read_word();
+        let command = Command::try_from(reply.read_word());
+        let bytes_written = reply.read_word() as usize;
+
+        let mut reply = reply.finish_results();
+        let handle: Option<OwnedHandle> = unsafe { reply.read_translate_result() };
+
+        Ok(Parameter {
+            sender,
+            command,
+            bytes_written,
+            handle,
+        })
     }
 
     fn prepare_to_close_application(&self, cancel_preload: bool) -> Result<()> {
@@ -136,6 +171,38 @@ impl Apt {
             .dispatch(&self.handle)?;
         Ok(())
     }
+
+    /// [`APT:NotifyToWait`](https://www.3dbrew.org/wiki/APT:NotifyToWait), a no-op.
+    fn notify_to_wait(&self, app_id: AppId) -> Result<()> {
+        let _ = IpcRequest::command(0x43)
+            .parameter(app_id)
+            .dispatch(&self.handle)?;
+        Ok(())
+    }
+
+    fn applet_utility(&self, utility: Utility, input: &[u8], output: &mut [u8]) -> Result<()> {
+        let mut reply = IpcRequest::command(0x4b)
+            .parameter(utility)
+            .parameter(input.len())
+            .parameter(output.len())
+            .translate_parameter(StaticBuffer::new(input, 1))
+            .dispatch_with_receive_buffers(&self.handle, &mut [output])?;
+
+        // Result code of the utility
+        reply.read_result()
+    }
+
+    fn unlock_transition(&self, transition: u32) -> Result<()> {
+        self.applet_utility(
+            Utility::UnlockTransition,
+            &transition.to_le_bytes(),
+            &mut [0u8; 1],
+        )
+    }
+
+    fn sleep_if_shell_closed(&self) -> Result<()> {
+        self.applet_utility(Utility::SleepIfShellClosed, &[0; 1], &mut [0; 1])
+    }
 }
 
 struct LazyApt {
@@ -143,21 +210,6 @@ struct LazyApt {
 }
 
 impl LazyApt {
-    fn new(srv: Srv) -> Self {
-        Self {
-            session: LazyServiceSession::new(srv, &APT_SERVICE_NAMES),
-        }
-    }
-
-    fn init(srv: Srv) -> Result<Mutex<Self>> {
-        let mut apt = Self::new(srv);
-
-        const FLAGS: u16 = 0x0;
-        let mutex = apt.open_session()?.get_lock(FLAGS)?;
-
-        Ok(Mutex::const_new(mutex, apt))
-    }
-
     fn open_session(&mut self) -> Result<Apt> {
         self.session.open().map(Apt::new)
     }
@@ -165,35 +217,88 @@ impl LazyApt {
 
 #[repr(C)]
 struct Events {
-    signal: Event,
-    resume: Event,
+    notification: Event,
+    parameter: Event,
 }
 
 pub struct AptLock {
     events: Events,
+    app_id: AppId,
     apt: Mutex<LazyApt>,
 }
 
 impl AptLock {
     pub fn init(srv: Srv) -> Result<Self> {
-        let apt = LazyApt::init(srv)?;
+        let mut session = LazyServiceSession::new(srv, &APT_SERVICE_NAMES);
 
-        let events = apt.lock().open_session()?.init(
-            AppId::Application,
-            AppletAttributes::new()
-                .position(AppPosition::App)
-                .manual_gpu_rights()
-                .manual_dsp_rights(),
-        )?;
+        let mutex = {
+            // Obtain the mutex for cross-process synchronization.
+            const FLAGS: u16 = 0x0;
+            let mutex = Apt::new(session.open()?).get_lock(FLAGS)?;
+            Mutex::const_new(mutex, LazyApt { session })
+        };
 
-        Ok(Self { events, apt })
+        let app_id = AppId::from_env().expect("environment should contain a valid App ID");
+
+        // Perform the APT initialization sequence in a temporary session:
+        let events = {
+            let apt = AptGuard::lock(&mutex)?;
+
+            // Tell APT which app we are.
+            const ATTRS: AppletAttributes = AppletAttributes::new().position(AppPosition::App);
+            let events = apt.attach(app_id, ATTRS)?;
+
+            // Mark ourselves as ready to receive parameters.
+            apt.subscribe_parameters(ATTRS)?;
+
+            // No-op, but called in libctru.
+            apt.notify_to_wait(app_id)?;
+
+            events
+        };
+
+        let apt = Self {
+            events,
+            app_id,
+            apt: mutex,
+        };
+
+        let command = apt.wait_for_wakeup()?;
+
+        if command != Command::WakeupJumpToHome {
+            let apt = apt.lock()?;
+            apt.unlock_transition(0x10)?;
+            apt.sleep_if_shell_closed()?;
+        } else {
+            unimplemented!("Received `Command::WakeupJumpToHome` in APT initialization")
+        }
+
+        Ok(apt)
     }
 
     pub fn lock(&self) -> Result<AptGuard<'_>> {
-        let mut guard = self.apt.lock();
-        let apt = guard.open_session()?;
+        AptGuard::lock(&self.apt)
+    }
 
-        Ok(AptGuard { apt, _guard: guard })
+    pub(crate) fn wait_for_parameter(&self, buffer: &mut [u8]) -> Result<Parameter> {
+        self.events.parameter.wait(Timeout::forever())?;
+        self.lock()?.receive_parameter(self.app_id, buffer)
+    }
+
+    pub(crate) fn wait_for_wakeup(&self) -> Result<Command> {
+        let mut buf = [0; 0x1000];
+        loop {
+            let parameter = self.wait_for_parameter(&mut buf)?;
+            match parameter.command {
+                Ok(command) if command.is_wakeup() => return Ok(command),
+                Ok(other) => log::debug!("Ignoring non-wakeup command {other:?}"),
+                Err(unkn) => log::warn!(
+                    "Ignoring unknown command {:#x} from {:#x}",
+                    unkn.number,
+                    parameter.sender
+                ),
+            }
+        }
     }
 }
 
@@ -201,6 +306,14 @@ pub struct AptGuard<'lock> {
     // Fields in drop order:
     apt: Apt,                           // 1. close the APT session,
     _guard: MutexGuard<'lock, LazyApt>, // 2. release the access lock.
+}
+
+impl<'lock> AptGuard<'lock> {
+    fn lock(mutex: &'lock Mutex<LazyApt>) -> Result<Self> {
+        let mut guard = mutex.lock();
+        let apt = guard.open_session()?;
+        Ok(Self { apt, _guard: guard })
+    }
 }
 
 impl Deref for AptGuard<'_> {
@@ -211,8 +324,8 @@ impl Deref for AptGuard<'_> {
     }
 }
 
-#[derive(Debug, IntoPrimitive, Clone, Copy)]
-#[repr(u16)]
+#[derive(Debug, IntoPrimitive, TryFromPrimitive, Clone, Copy)]
+#[repr(u32)]
 enum AppId {
     HomeMenu = 0x101,
     Camera = 0x110,
@@ -236,6 +349,12 @@ enum AppId {
     Memolib = 0x409,
 }
 
+impl AppId {
+    pub fn from_env() -> core::result::Result<AppId, u32> {
+        Self::try_from_primitive(env::app_id()).map_err(|err| err.number)
+    }
+}
+
 #[derive(Debug, IntoPrimitive)]
 #[repr(u8)]
 enum AppPosition {
@@ -247,8 +366,77 @@ enum AppPosition {
     None = 0x7,
 }
 
-impl Parameter for AppId {
+impl ipc::Parameter for AppId {
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
-        cmdbuf.write(*self as u16 as u32)
+        cmdbuf.write(u32::from(*self))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
+#[repr(u32)]
+pub(crate) enum Command {
+    None = 0x0,
+    Wakeup,
+    Request,
+    Response,
+    Exit,
+    Message,
+    HomebuttonOnce,
+    HomebuttonTwice,
+    DspSleep,
+    DspWakeup,
+    WakeupExit,
+    WakeupPause,
+    WakeupCancel,
+    WakeupCancelAll,
+    WakeupPowerbutton,
+    WakeupJumpToHome,
+    SysappletRequest,
+    WakeupLaunchApp,
+}
+
+type UnknownCommand = num_enum::TryFromPrimitiveError<Command>;
+
+impl Command {
+    fn is_wakeup(&self) -> bool {
+        matches!(
+            self,
+            Command::Wakeup
+                | Command::WakeupExit
+                | Command::WakeupPause
+                | Command::WakeupCancel
+                | Command::WakeupCancelAll
+                | Command::WakeupPowerbutton
+                | Command::WakeupJumpToHome
+                | Command::WakeupLaunchApp
+        )
+    }
+}
+
+pub(crate) struct Parameter {
+    sender: u32,
+    command: core::result::Result<Command, UnknownCommand>,
+    bytes_written: usize,
+    handle: Option<OwnedHandle>,
+}
+
+#[derive(Debug, Clone, Copy, IntoPrimitive)]
+#[repr(u32)]
+enum Utility {
+    ClearPowerButtonState = 0,
+    ClearExclusiveControl = 3,
+    SleepIfShellClosed = 4,
+    LockTransition = 5,
+    TryLockTransition = 6,
+    UnlockTransition = 7,
+    StartExitTask = 10,
+    SetInitialSenderId = 11,
+    SetPowerButtonClick = 12,
+    UnlockCartAndSdSlot = 16,
+}
+
+impl ipc::Parameter for Utility {
+    fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
+        cmdbuf.write(u32::from(*self));
     }
 }

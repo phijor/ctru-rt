@@ -10,7 +10,7 @@ use self::reply::CommandBufferReader;
 pub(crate) use self::request::{CommandBufferWriter, IpcRequest};
 
 use crate::os::{BorrowedHandle, OwnedHandle, RawHandle, ValidRawHandle};
-use crate::result::{ResultCode, ResultValue};
+use crate::result::{Result, ResultCode, ResultValue};
 use crate::tls;
 
 use core::marker::PhantomData;
@@ -175,6 +175,13 @@ impl IpcResult for ResultCode {
     #[inline(always)]
     fn decode(result: u32) -> Self {
         ResultCode::from(result)
+    }
+}
+
+impl IpcResult for Result<()> {
+    #[inline(always)]
+    fn decode(result: u32) -> Self {
+        ResultCode::from(result).into_result()
     }
 }
 
