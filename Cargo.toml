@@ -11,6 +11,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+debug = "line-tables-only"
 
 [dependencies]
 ctru-rt-macros = { path = "ctru-rt-macros" }
