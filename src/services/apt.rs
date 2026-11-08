@@ -79,12 +79,11 @@ impl Apt {
             .dispatch(&self.handle)?;
 
         let mut reply = reply.finish_results();
-        let notification = unsafe { Event::from_handle(reply.read_handle()) };
-        let parameter = unsafe { Event::from_handle(reply.read_handle()) };
+        let [notification, parameter] = unsafe { reply.read_handles() };
 
         Ok(Events {
-            notification,
-            parameter,
+            notification: unsafe { Event::from_handle(notification) },
+            parameter: unsafe { Event::from_handle(parameter) },
         })
     }
 
