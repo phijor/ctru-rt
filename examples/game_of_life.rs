@@ -17,10 +17,10 @@ use ctru_rt::{
     ports::srv::Srv,
     result::Result,
     services::{
+        apt::AptLock,
         gsp::gpu::{Gpu, Screen, ScreenDimensions},
         hid::Hid,
     },
-    svc,
 };
 use log::{error, info};
 
@@ -257,20 +257,22 @@ fn run() -> Result<()> {
         game_top.update();
     }
 
-    info!("Exiting...");
-
     Ok(())
+}
+
+fn exit() -> Result<!> {
+    let srv = Srv::init()?;
+    let apt = AptLock::init(srv)?;
+    apt.exit()
 }
 
 #[entry]
 fn main() {
     let _ = ctru_rt::debug::init_log();
 
-    match run() {
-        Ok(_) => {}
-        Err(e) => {
-            error!("Failed to run: {:?}", e);
-            svc::exit_process()
-        }
+    if let Err(e) = run() {
+        error!("Failed to run: {:?}", e);
     }
+
+    exit().unwrap();
 }

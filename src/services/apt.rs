@@ -6,13 +6,13 @@ use core::ops::Deref;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::env;
 use crate::ipc::{self, CommandBufferWriter, IpcRequest, StaticBuffer};
 use crate::os::{OwnedHandle, ValidRawHandle};
 use crate::ports::srv::{LazyServiceSession, Srv};
-use crate::result::Result;
+use crate::result::{Level, Result, ResultCode, ResultValue};
 use crate::svc::Timeout;
 use crate::sync::{Event, Mutex, MutexGuard, OsMutex};
+use crate::{env, svc};
 
 const APT_SERVICE_NAMES: [&str; 3] = ["APT:S", "APT:A", "APT:U"];
 
@@ -134,14 +134,16 @@ impl Apt {
         })
     }
 
-    fn prepare_to_close_application(&self, cancel_preload: bool) -> Result<()> {
+    fn prepare_to_close_application(&self, return_to_system: bool) -> Result<()> {
+        log::info!("Preparing to close app (returning to system: {return_to_system})");
         let _ = IpcRequest::command(0x22)
-            .parameter(cancel_preload as u32)
+            .parameter(u32::from(return_to_system))
             .dispatch(&self.handle)?;
         Ok(())
     }
 
     fn close_application_raw(&self, payload: &[u32], handle: Option<ValidRawHandle>) -> Result<()> {
+        log::info!("Closing app!");
         let _ = IpcRequest::command(0x27)
             .parameter(size_of_val(payload))
             .translate_parameter(handle)
@@ -156,17 +158,29 @@ impl Apt {
 
     fn prepare_to_do_application_jump(
         &self,
-        flags: u8,
+        target: JumpTarget,
         program_id: u64,
         media_type: u8,
     ) -> Result<()> {
+        log::info!("Preparing application jump to {target:?}, {program_id:#x}");
         let _ = IpcRequest::command(0x31)
             .parameters(&[
-                flags as u32,
+                target as u32,
                 program_id as u32,
                 (program_id >> 32) as u32,
                 media_type as u32,
             ])
+            .dispatch(&self.handle)?;
+        Ok(())
+    }
+
+    fn do_application_jump(&self, parameter: &[u8], hmac: &[u8; 0x20]) -> Result<()> {
+        log::info!("Attempting application jump");
+        let _ = IpcRequest::command(0x32)
+            .parameter(parameter.len())
+            .parameter(hmac.len())
+            .translate_parameter(StaticBuffer::new(parameter, 0))
+            .translate_parameter(StaticBuffer::new(hmac, 2))
             .dispatch(&self.handle)?;
         Ok(())
     }
@@ -188,7 +202,12 @@ impl Apt {
             .dispatch_with_receive_buffers(&self.handle, &mut [output])?;
 
         // Result code of the utility
-        reply.read_result()
+        let result: ResultCode = reply.read_result();
+        if matches!(result.level(), Ok(Level::Success)) {
+            Ok(())
+        } else {
+            result.into_result()
+        }
     }
 
     fn unlock_transition(&self, transition: u32) -> Result<()> {
@@ -197,10 +216,12 @@ impl Apt {
             &transition.to_le_bytes(),
             &mut [0u8; 1],
         )
+        .inspect_err(|err| log::error!("unlock_transition failed with {err:?}"))
     }
 
     fn sleep_if_shell_closed(&self) -> Result<()> {
         self.applet_utility(Utility::SleepIfShellClosed, &[0; 1], &mut [0; 1])
+            .inspect_err(|err| log::error!("sleep_if_shell_closed failed with {err:?}"))
     }
 }
 
@@ -275,6 +296,32 @@ impl AptLock {
         Ok(apt)
     }
 
+    fn schedule_exit(self) -> Result<()> {
+        let AptLock { apt, .. } = self;
+        let guard = AptGuard::lock(&apt)?;
+
+        let do_chainload = env::system_runflags().chainload_apt();
+        if do_chainload && guard.is_registered(AppId::HomeMenu)? {
+            guard.prepare_to_do_application_jump(JumpTarget::Ourself, 0, 0)?;
+            static DELIVER_ARG: [u8; 0x300] = [0; _];
+            static HMAC: [u8; 0x20] = [0; _];
+            guard.do_application_jump(&DELIVER_ARG, &HMAC)?;
+        } else {
+            const RETURN_TO_SYSTEM: bool = true;
+            guard.prepare_to_close_application(RETURN_TO_SYSTEM)?;
+            guard.close_application(&[])?;
+        }
+
+        Ok(())
+    }
+
+    pub fn exit(self) -> ! {
+        if let Err(err) = self.schedule_exit() {
+            log::error!("Failed to exit via APT: {err:?}");
+        }
+        svc::exit_process()
+    }
+
     pub fn lock(&self) -> Result<AptGuard<'_>> {
         AptGuard::lock(&self.apt)
     }
@@ -285,9 +332,16 @@ impl AptLock {
     }
 
     pub(crate) fn wait_for_wakeup(&self) -> Result<Command> {
-        let mut buf = [0; 0x1000];
+        let mut buf = alloc::vec![0u8; 0x1000].into_boxed_slice();
         loop {
-            let parameter = self.wait_for_parameter(&mut buf)?;
+            let parameter = match self.wait_for_parameter(&mut buf) {
+                Ok(parameter) => parameter,
+                Err(err) => {
+                    log::warn!("Ignoring failed Apt::wait_for_parameter: {err:?}");
+                    continue;
+                }
+            };
+
             match parameter.command {
                 Ok(command) if command.is_wakeup() => return Ok(command),
                 Ok(other) => log::debug!("Ignoring non-wakeup command {other:?}"),
@@ -438,4 +492,16 @@ impl ipc::Parameter for Utility {
     fn encode(&self, cmdbuf: &mut CommandBufferWriter) {
         cmdbuf.write(u32::from(*self));
     }
+}
+
+/// Flags for [`APT:PrepareToDoApplicationJump`](https://www.3dbrew.org/wiki/APT:PrepareToDoApplicationJump).
+#[derive(Debug, IntoPrimitive)]
+#[repr(u32)]
+enum JumpTarget {
+    /// Jump to the given program ID and media type.
+    Explicit = 0,
+    /// Jump back to the caller, using the parameters from the NS state.
+    Caller = 1,
+    /// Jump to the parameters already set for the application (app ID 0x300), i.e. ourselves.
+    Ourself = 2,
 }

@@ -18,8 +18,18 @@ pub fn app_id() -> u32 {
     unsafe { __apt_appid }
 }
 
-pub fn system_runflags() -> u32 {
-    unsafe { __system_runflags }
+pub fn system_runflags() -> SystemRunflags {
+    SystemRunflags(unsafe { __system_runflags })
+}
+
+#[derive(Clone, Copy)]
+pub struct SystemRunflags(u32);
+
+impl SystemRunflags {
+    /// On exit, jump back to the launcher instead of closing.
+    pub fn chainload_apt(&self) -> bool {
+        self.0 & (1 << 2) != 0
+    }
 }
 
 pub struct SystemArgList {
