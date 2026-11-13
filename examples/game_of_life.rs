@@ -231,7 +231,7 @@ impl GameOfLife {
     }
 }
 
-fn run() -> Result<()> {
+fn run() -> Result<!> {
     let srv = Srv::init()?;
 
     let mut gpu = Gpu::init(&srv)?;
@@ -239,6 +239,8 @@ fn run() -> Result<()> {
     let mut gfx = Graphics::init_default(&mut gpu)?;
 
     let hid = Hid::init(&srv)?;
+
+    let apt = AptLock::init(srv)?;
 
     let mut game_bot = GameOfLife::new(gfx.dimensions(Screen::Bottom));
     game_bot.seed(0x1234_5678);
@@ -257,22 +259,12 @@ fn run() -> Result<()> {
         game_top.update();
     }
 
-    Ok(())
-}
-
-fn exit() -> Result<!> {
-    let srv = Srv::init()?;
-    let apt = AptLock::init(srv)?;
     apt.exit()
 }
 
 #[entry]
 fn main() {
     let _ = ctru_rt::debug::init_log();
-
-    if let Err(e) = run() {
-        error!("Failed to run: {:?}", e);
-    }
-
-    exit().unwrap();
+    let Err(err) = run();
+    error!("Failed to run: {err:?}");
 }

@@ -17,6 +17,7 @@ use ctru_rt::{
     ports::srv::Srv,
     result::Result,
     services::{
+        apt::AptLock,
         gsp::gpu::{Gpu, Screen},
         hid::{Hid, KeyPad},
     },
@@ -37,6 +38,7 @@ fn run() -> Result<()> {
     let mut gpu = Gpu::init(&srv)?;
     let mut gfx = Graphics::init_default(&mut gpu)?;
     let hid = Hid::init(&srv)?;
+    let apt = AptLock::init(srv)?;
 
     gfx.clear_screen(Screen::Top);
     gfx.clear_screen(Screen::Bottom);
@@ -84,7 +86,7 @@ fn run() -> Result<()> {
         tick += 1;
     }
 
-    Ok(())
+    apt.exit()
 }
 
 fn bottles() {
