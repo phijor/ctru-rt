@@ -89,8 +89,7 @@ impl<const N: usize> fmt::Write for FixedSizeBufferWriter<N> {
 #[macro_export]
 macro_rules! early_debug {
     ($fmt: expr, $($args: expr,)*) => {
-        #[cfg(debug_assertions)]
-        {
+        if cfg!(debug_assertions) {
             let write = || {
                 use alloc::fmt::Write;
                 use $crate::{debug::FixedSizeBufferWriter, svc::output_debug_bytes};
@@ -103,12 +102,9 @@ macro_rules! early_debug {
             };
 
             write()
-        }
-
-        // Mark the arguments as used without evaluating them, so variables that only exist to be
-        // logged do not trigger `unused_variables` in release builds.
-        #[cfg(not(debug_assertions))]
-        if false {
+        } else if false {
+            // Mark the arguments as used without evaluating them, so variables that only exist to be
+            // logged do not trigger `unused_variables` in release builds.
             let _ = core::format_args!($fmt, $($args),*);
         }
     };
