@@ -392,81 +392,69 @@ impl TranslateParameter for StaticBuffer<'_> {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct MappedWritableBuffer<'buf> {
-    source: *mut u8,
-    size: u32,
-    _lifetime: PhantomData<&'buf mut [u8]>,
-}
+mod sealed {
+    use super::BufferRights;
 
-impl<'buf> MappedWritableBuffer<'buf> {
-    pub fn new(buf: &'buf mut [u8]) -> Self {
-        // Maximum buffer size (in bytes) is 0x0FFF_FFFF.
-        let size = core::mem::size_of_val(buf);
-        let size = if size <= 0x0FFF_FFFF {
-            size as u32
-        } else {
-            panic!("Static buffer size must fit 26 bits");
-        };
+    pub unsafe trait MappableBuffer {
+        const RIGHTS: BufferRights;
 
-        let source = buf.as_mut_ptr();
-
-        Self {
-            source,
-            size,
-            _lifetime: PhantomData,
-        }
+        fn into_raw_parts(self) -> (*mut u8, usize);
     }
 }
 
-impl TranslateParameter for MappedWritableBuffer<'_> {
-    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
-        let header = (self.size << 4) | 0b1000 | BufferRights::WRITE.0;
+pub(crate) trait MappableBuffer: sealed::MappableBuffer {}
 
-        let ptr: *mut u32 = self.source.cast();
+impl MappableBuffer for &[u8] {}
+unsafe impl sealed::MappableBuffer for &[u8] {
+    const RIGHTS: BufferRights = BufferRights::READ;
 
-        cmdbuf.write(header);
-        cmdbuf.write(ptr as u32);
+    fn into_raw_parts(self) -> (*mut u8, usize) {
+        let ptr: *mut [u8] = core::ptr::from_ref(self).cast_mut();
+        (ptr.cast(), ptr.len())
+    }
+}
+
+impl MappableBuffer for &mut [u8] {}
+unsafe impl sealed::MappableBuffer for &mut [u8] {
+    const RIGHTS: BufferRights = BufferRights::WRITE;
+
+    fn into_raw_parts(self) -> (*mut u8, usize) {
+        let ptr: *mut [u8] = core::ptr::from_mut(self);
+        (ptr.cast(), ptr.len())
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct MappedReadableBuffer<'buf> {
-    source: *const u8,
-    size: u32,
-    _lifetime: PhantomData<&'buf [u8]>,
+pub(crate) struct MappedBuffer<B> {
+    buf: B,
 }
 
-impl<'buf> MappedReadableBuffer<'buf> {
-    pub fn new(buf: &'buf [u8]) -> Self {
+impl<B> MappedBuffer<B> {
+    pub const fn new(buf: B) -> Self {
+        Self { buf }
+    }
+}
+
+impl<B: MappableBuffer> TranslateParameter for MappedBuffer<B> {
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        let (ptr, size) = self.buf.into_raw_parts();
+
         // Maximum buffer size (in bytes) is 0x0FFF_FFFF.
-        let size = core::mem::size_of_val(buf);
         let size = if size <= 0x0FFF_FFFF {
             size as u32
         } else {
-            panic!("Static buffer size must fit 26 bits");
+            panic!("Mapped buffer size must fit 26 bits");
         };
 
-        let source = buf.as_ptr();
-
-        Self {
-            source,
-            size,
-            _lifetime: PhantomData,
-        }
-    }
-}
-
-impl TranslateParameter for MappedReadableBuffer<'_> {
-    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
-        let header = (self.size << 4) | 0b1000 | BufferRights::READ.0;
-
-        let ptr: *const u32 = self.source.cast();
+        let header = (size << 4) | 0b1000 | B::RIGHTS.0;
 
         cmdbuf.write(header);
-        cmdbuf.write(ptr as u32);
+        cmdbuf.write(ptr.expose_provenance() as u32);
     }
 }
+
+pub(crate) type MappedWritableBuffer<'buf> = MappedBuffer<&'buf mut [u8]>;
+pub(crate) type MappedReadableBuffer<'buf> = MappedBuffer<&'buf [u8]>;
 
 #[derive(Debug)]
 pub struct BufferRights(u32);
