@@ -431,6 +431,44 @@ impl TranslateParameter for MappedWritableBuffer<'_> {
 }
 
 #[derive(Debug)]
+pub(crate) struct MappedReadableBuffer<'buf> {
+    source: *const u8,
+    size: u32,
+    _lifetime: PhantomData<&'buf [u8]>,
+}
+
+impl<'buf> MappedReadableBuffer<'buf> {
+    pub fn new(buf: &'buf [u8]) -> Self {
+        // Maximum buffer size (in bytes) is 0x0FFF_FFFF.
+        let size = core::mem::size_of_val(buf);
+        let size = if size <= 0x0FFF_FFFF {
+            size as u32
+        } else {
+            panic!("Static buffer size must fit 26 bits");
+        };
+
+        let source = buf.as_ptr();
+
+        Self {
+            source,
+            size,
+            _lifetime: PhantomData,
+        }
+    }
+}
+
+impl TranslateParameter for MappedReadableBuffer<'_> {
+    fn encode(self, cmdbuf: &mut CommandBufferWriter) {
+        let header = (self.size << 4) | 0b1000 | BufferRights::READ.0;
+
+        let ptr: *const u32 = self.source.cast();
+
+        cmdbuf.write(header);
+        cmdbuf.write(ptr as u32);
+    }
+}
+
+#[derive(Debug)]
 pub struct BufferRights(u32);
 
 #[rustfmt::skip]
