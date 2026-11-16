@@ -54,15 +54,23 @@ impl CommandBufferWriter {
     }
 }
 
-pub(crate) struct IpcRequest<S: state::State = state::Normal> {
+pub(crate) struct IpcRequest<'p, S: state::State = state::Normal> {
+    /// A writer for encoding the request into the command buffer in TLS.
     cmdbuf: CommandBufferWriter,
+    /// The number of words written for normal parameters.
     param_words: u32,
+    /// The number of words written for translate parameters.
     translate_param_words: u32,
+    /// The command ID.
     id: u16,
+    /// The typestate: are we encoding normal or translate parameters?
     _state: PhantomData<S>,
+    /// The borrows held by translate parameters (e.g. memory backing mapped buffers).
+    /// Translate parameters must stay live until the request is dispatched.
+    _parameters: PhantomData<&'p ()>,
 }
 
-impl IpcRequest<state::Normal> {
+impl<'p> IpcRequest<'p, state::Normal> {
     #[inline]
     pub fn command(id: u16) -> Self {
         let mut cmdbuf = CommandBufferWriter::new(CommandBuffer::get());
@@ -75,6 +83,7 @@ impl IpcRequest<state::Normal> {
             translate_param_words: 0,
             id,
             _state: PhantomData,
+            _parameters: PhantomData,
         }
     }
 
@@ -103,11 +112,11 @@ impl IpcRequest<state::Normal> {
     }
 }
 
-impl<S: state::State> IpcRequest<S> {
+impl<'p, S: state::State> IpcRequest<'p, S> {
     #[inline]
-    pub fn translate_parameter<P>(mut self, parameter: P) -> IpcRequest<state::Translate>
+    pub fn translate_parameter<P>(mut self, parameter: P) -> IpcRequest<'p, state::Translate>
     where
-        P: TranslateParameter,
+        P: TranslateParameter + 'p,
     {
         let pos = self.cmdbuf.pos();
         let before = self.cmdbuf.end_ptr;
@@ -123,6 +132,7 @@ impl<S: state::State> IpcRequest<S> {
             translate_param_words: self.translate_param_words + size,
             id: self.id,
             _state: PhantomData,
+            _parameters: PhantomData,
         }
     }
 
