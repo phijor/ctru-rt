@@ -294,30 +294,24 @@ impl fmt::Display for PageAlignError {
 }
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct PageAlignedBuffer {
-    buffer: Option<NonNull<[u8]>>,
+    buffer: NonNull<[u8]>,
 }
 
 impl PageAlignedBuffer {
-    pub const fn null() -> Self {
-        Self { buffer: None }
-    }
-
     pub fn allocate(size: usize) -> ::core::result::Result<Self, PageAlignError> {
         let layout = Self::layout_for_size(size).map_err(PageAlignError::Layout)?;
-        let buffer = Some(allocate(&ALLOCATOR, layout).map_err(|_| PageAlignError::Alloc)?);
+        let buffer = allocate(&ALLOCATOR, layout).map_err(|_| PageAlignError::Alloc)?;
         Ok(PageAlignedBuffer { buffer })
     }
 
-    pub const fn as_ptr(&self) -> *const u8 {
-        match self.buffer {
-            Some(buffer) => buffer.as_ptr() as *const u8,
-            None => core::ptr::null(),
-        }
+    pub const fn as_mut_ptr(&mut self) -> *mut [u8] {
+        self.buffer.as_ptr()
     }
 
-    pub fn size(&self) -> usize {
-        self.buffer.map_or(0, |buffer| buffer.len())
+    pub const fn size(&self) -> usize {
+        self.buffer.len()
     }
 
     pub fn layout_for_size(size: usize) -> ::core::result::Result<Layout, LayoutError> {
@@ -329,19 +323,12 @@ impl PageAlignedBuffer {
     }
 }
 
-impl Default for PageAlignedBuffer {
-    fn default() -> Self {
-        Self::null()
-    }
-}
-
 impl Drop for PageAlignedBuffer {
     fn drop(&mut self) {
-        if let Some(buffer) = self.buffer {
-            unsafe {
-                let layout = Self::layout_for_size_unchecked(buffer.len());
-                deallocate(&ALLOCATOR, buffer.cast(), layout)
-            };
-        }
+        let Self { buffer } = self;
+        unsafe {
+            let layout = Self::layout_for_size_unchecked(buffer.len());
+            deallocate(&ALLOCATOR, buffer.cast(), layout)
+        };
     }
 }
