@@ -11,7 +11,7 @@ use crate::{early_debug, os::mem, result::Result, svc};
 use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::{
-    alloc::{AllocError, Layout, LayoutError},
+    alloc::{AllocError, Layout},
     fmt,
     ptr::NonNull,
 };
@@ -279,31 +279,56 @@ pub(crate) fn initialized() -> bool {
 }
 
 #[derive(Debug)]
-pub enum PageAlignError {
+#[non_exhaustive]
+pub enum PageBufferError {
     Alloc,
-    Layout(#[allow(deprecated)] LayoutError),
+    Layout,
 }
 
-impl fmt::Display for PageAlignError {
+impl fmt::Display for PageBufferError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Alloc => write!(f, "failed to allocate page aligned memory"),
-            Self::Layout(_) => write!(f, "size was not suitable for a page aligned allocation"),
+            Self::Layout => write!(
+                f,
+                "num_pages was not suitable for a page aligned allocation"
+            ),
         }
     }
 }
 
+pub const PAGE_SIZE: usize = 0x1000;
+
+#[repr(C, align(0x1000))]
+struct Page([u8; PAGE_SIZE]);
+
+// `PageBuffer::drop` must reproduce the layout of `Layout::array::<Page>`.
+const _: () = assert!(size_of::<Page>() == PAGE_SIZE && align_of::<Page>() == PAGE_SIZE);
+
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct PageAlignedBuffer {
+pub struct PageBuffer {
     buffer: NonNull<[u8]>,
 }
 
-impl PageAlignedBuffer {
-    pub fn allocate(size: usize) -> ::core::result::Result<Self, PageAlignError> {
-        let layout = Self::layout_for_size(size).map_err(PageAlignError::Layout)?;
-        let buffer = allocate(&ALLOCATOR, layout).map_err(|_| PageAlignError::Alloc)?;
-        Ok(PageAlignedBuffer { buffer })
+impl PageBuffer {
+    /// Allocate `size` = `num_pages * PAGE_SIZE` bytes of uninitialized, page-aligned memory.
+    ///
+    /// Returns an error if `size` overflows [`isize::MAX`].
+    pub fn allocate_pages(
+        num_pages: NonZeroUsize,
+    ) -> ::core::result::Result<Self, PageBufferError> {
+        let layout = Self::layout_from_num_pages(num_pages).ok_or(PageBufferError::Layout)?;
+        let buffer = allocate(&ALLOCATOR, layout).map_err(|_| PageBufferError::Alloc)?;
+        Ok(PageBuffer { buffer })
+    }
+
+    /// Return a layout suitable for a page-aligned allocation of `num_pages` pages.
+    const fn layout_from_num_pages(num_pages: NonZeroUsize) -> Option<Layout> {
+        match Layout::array::<Page>(num_pages.get()) {
+            Ok(layout) => Some(layout),
+            Err(_) => None,
+        }
     }
 
     pub const fn as_mut_ptr(&mut self) -> *mut [u8] {
@@ -313,21 +338,18 @@ impl PageAlignedBuffer {
     pub const fn size(&self) -> usize {
         self.buffer.len()
     }
-
-    pub fn layout_for_size(size: usize) -> ::core::result::Result<Layout, LayoutError> {
-        Layout::from_size_align(size, 0x1000)
-    }
-
-    unsafe fn layout_for_size_unchecked(size: usize) -> Layout {
-        unsafe { Layout::from_size_align_unchecked(size, 0x1000) }
-    }
 }
 
-impl Drop for PageAlignedBuffer {
+impl Drop for PageBuffer {
     fn drop(&mut self) {
         let Self { buffer } = self;
         unsafe {
-            let layout = Self::layout_for_size_unchecked(buffer.len());
+            // SAFETY:
+            // `buffer` was allocated with a layout computed by `layout_from_num_pages`,
+            // hence its size is a multiple of `PAGE_SIZE` and does not overflow `isize::MAX`.
+            let layout = Layout::from_size_align_unchecked(buffer.len(), align_of::<Page>());
+            // SAFETY:
+            // Both `buffer` and `layout` come from a matching allocation in `allocate_pages`.
             deallocate(&ALLOCATOR, buffer.cast(), layout)
         };
     }
