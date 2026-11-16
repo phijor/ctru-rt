@@ -183,12 +183,25 @@ pub fn clear_event(handle: BorrowedHandle) -> Result<()> {
     unsafe { svc!(0x19: (handle)) }
 }
 
+/// Create a handle to a memory block to be shared with other processes.
+///
+/// The block is backed by an allocation at `ptr`. Its contents may be uninitialized.
+///
+/// # Safety
+///
+/// - `ptr` must be page-aligned, and `ptr.len()` must be a nonzero multiple of the page size (0x1000).
+/// - The memory must stay allocated until the block is gone, i.e. until the returned handle
+///   is closed and all processes that mapped the block have unmapped it.
+/// - While the block exists, other processes may access the memory at any time (subject to
+///   `other_permissions`). The caller must not create references to it; access it only
+///   through raw pointers.
 pub unsafe fn create_memory_block(
-    address: usize,
-    size: usize,
+    ptr: *mut [u8],
     my_permissions: MemoryPermission,
     other_permissions: MemoryPermission,
 ) -> Result<OwnedHandle> {
+    let address = ptr as *mut u8;
+    let size = ptr.len();
     svc!(0x1e: (other_permissions, address, size, my_permissions) -> OwnedHandle)
 }
 
