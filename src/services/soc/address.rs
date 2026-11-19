@@ -46,7 +46,7 @@ impl RawAddr {
     pub(super) const fn unspec() -> Self {
         Self {
             len: 0,
-            family: AddressFamily::AF_UNSPEC as u8,
+            family: AddressFamily::Unspecified as u8,
             inner: RawAddrInner {
                 unspec: RawAddrUnspec([0; _]),
             },
@@ -71,13 +71,13 @@ impl RawAddr {
 
     pub(super) fn decode(&self) -> Option<SocketAddr> {
         match self.family() {
-            AddressFamily::AF_INET if self.len >= 8 => {
+            AddressFamily::INetV4 if self.len >= 8 => {
                 let RawAddr4 { port, addr } = unsafe { self.inner.v4 };
                 let port = u16::from_be(port);
                 let addr = Ipv4Addr::from_octets(addr);
                 Some(SocketAddr::V4(SocketAddrV4::new(addr, port)))
             }
-            AddressFamily::AF_INET6 if self.len >= 0x1c => {
+            AddressFamily::INetV6 if self.len >= 0x1c => {
                 let RawAddr6 {
                     port,
                     addr,
@@ -103,7 +103,7 @@ impl RawAddr {
         match addr {
             SocketAddr::V4(addr_v4) => {
                 raw.len = 8;
-                raw.family = AddressFamily::AF_INET.into();
+                raw.family = AddressFamily::INetV4.into();
                 raw.inner.v4 = RawAddr4 {
                     port: u16::to_be(addr_v4.port()),
                     addr: addr_v4.ip().octets(),
@@ -111,7 +111,7 @@ impl RawAddr {
             }
             SocketAddr::V6(addr_v6) => {
                 raw.len = 0x1c;
-                raw.family = AddressFamily::AF_INET6.into();
+                raw.family = AddressFamily::INetV6.into();
                 raw.inner.v6 = RawAddr6 {
                     port: u16::to_be(addr_v6.port()),
                     addr: addr_v6.ip().octets(),

@@ -148,6 +148,10 @@ pub enum SocketError {
     SystemErr(SystemErrorCode),
     /// The socket operation itself failed.
     SocketErr(SocketErrorCode),
+    /// Writing all of a buffer failed because the socket module accepted no more bytes.
+    WriteZero,
+    /// The socket module did not reportn address where one was expected.
+    MissingAddress,
 }
 
 impl From<SystemErrorCode> for SocketError {
@@ -164,10 +168,23 @@ impl From<SocketErrorCode> for SocketError {
 
 impl From<SocketError> for result::ErrorCode {
     fn from(error: SocketError) -> Self {
+        use result::{CommonDescription, ErrorCode, Level, Module, Summary};
+
         match error {
             SocketError::SystemErr(error_code) => error_code,
+            SocketError::WriteZero => ErrorCode::new(
+                Level::Permanent,
+                Summary::InvalidState,
+                Module::Application,
+                CommonDescription::NoData.into(),
+            ),
+            SocketError::MissingAddress => ErrorCode::new(
+                Level::Permanent,
+                Summary::NotSupported,
+                Module::Application,
+                CommonDescription::InvalidResultValue.into(),
+            ),
             SocketError::SocketErr(socket_error_code) => {
-                use result::{CommonDescription, ErrorCode, Level, Module, Summary};
                 type E = SocketErrorCode;
 
                 let summary = match socket_error_code {
