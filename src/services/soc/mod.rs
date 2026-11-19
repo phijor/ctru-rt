@@ -21,10 +21,12 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 mod address;
 mod error;
 mod socket;
+mod tcp;
 
 use address::RawAddr;
 pub use error::{Result, SocketError, SocketErrorCode};
-pub use socket::Socket;
+use socket::Socket;
+pub use tcp::{TcpListener, TcpStream};
 
 #[derive(Debug)]
 pub struct Soc {
@@ -53,7 +55,7 @@ impl Soc {
         Ok(Socket::new(fd, self))
     }
 
-    pub fn socket(
+    fn socket(
         &self,
         domain: AddressFamily,
         socket_type: Type,
@@ -263,29 +265,34 @@ impl AsHandle for Context {
 }
 
 #[derive(Debug, Default, IntoPrimitive, FromPrimitive)]
-#[non_exhaustive]
 #[repr(u8)]
-#[allow(non_camel_case_types)]
-pub enum AddressFamily {
+enum AddressFamily {
     #[default]
-    AF_UNSPEC = 0,
-    AF_INET = 2,
-    AF_INET6 = 23,
+    Unspecified = 0,
+    INetV4 = 2,
+    INetV6 = 23,
+}
+
+impl AddressFamily {
+    #[inline]
+    fn from_addr(addr: &SocketAddr) -> Self {
+        match addr {
+            SocketAddr::V4(_) => Self::INetV4,
+            SocketAddr::V6(_) => Self::INetV6,
+        }
+    }
 }
 
 #[derive(Debug, IntoPrimitive)]
-#[non_exhaustive]
 #[repr(u32)]
-pub enum Type {
+enum Type {
     Stream = 1,
     Datagram = 2,
 }
 
-#[derive(Debug, IntoPrimitive)]
-#[non_exhaustive]
+#[derive(Debug, Default, IntoPrimitive)]
 #[repr(u32)]
-#[derive(Default)]
-pub enum Protocol {
+enum Protocol {
     #[default]
     Default = 0,
 }

@@ -16,7 +16,7 @@ use ctru_console::ConsoleLog;
 use ctru_rt::graphics::Graphics;
 use ctru_rt::services::gsp::gpu::Gpu;
 use ctru_rt::services::hid::{Hid, KeyPad};
-use ctru_rt::services::soc::Socket;
+use ctru_rt::services::soc::{TcpListener, TcpStream};
 use ctru_rt::thread;
 use log::{LevelFilter, error, info};
 
@@ -24,12 +24,7 @@ use ctru_rt::{
     entry,
     ports::srv::Srv,
     result::Result,
-    services::{
-        ac::Ac,
-        apt::AptLock,
-        gsp::gpu::Screen,
-        soc::{AddressFamily, Protocol, Soc, Type},
-    },
+    services::{ac::Ac, apt::AptLock, gsp::gpu::Screen, soc::Soc},
 };
 
 #[panic_handler]
@@ -73,9 +68,9 @@ fn run(srv: &Srv, console: &ConsoleLog) -> Result<()> {
     Ok(())
 }
 
-fn echo(recv_buf: &mut [u8], client: Socket) -> Result<()> {
+fn echo(recv_buf: &mut [u8], client: TcpStream) -> Result<()> {
     loop {
-        let bytes_received = client.recv(0, recv_buf)?;
+        let bytes_received = client.read(recv_buf)?;
 
         if bytes_received == 0 {
             return Ok(());
@@ -86,7 +81,7 @@ fn echo(recv_buf: &mut [u8], client: Socket) -> Result<()> {
         if let Ok(msg) = str::from_utf8(msg).map(str::trim) {
             info!("client:\n{msg}")
         }
-        client.sendto(msg, 0, None)?;
+        client.write_all(msg)?;
     }
 }
 
@@ -94,22 +89,22 @@ fn serve(srv: Srv) -> Result<!> {
     const CONTEXT_PAGES: NonZeroUsize = NonZeroUsize::new(0x100).unwrap();
     let soc = Soc::init(&srv, CONTEXT_PAGES)?;
     info!("Initialized soc: {:#0x?}", soc);
-
-    let server = soc.socket(AddressFamily::AF_INET, Type::Stream, Protocol::Default)?;
-    info!("Initialized socket: {:0x?}", server);
-
     info!("gethostid() = {:03?}", soc.gethostid()?.to_ne_bytes());
 
-    server.bind(&SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 8000))?;
-    server.listen(1)?;
+    let server = TcpListener::bind(
+        &soc,
+        &SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 8000),
+        1,
+    )?;
+
+    info!("Initialized server: {server:0x?}");
 
     let mut buf = vec![0u8; 0x4000].into_boxed_slice();
 
     loop {
         let (client, client_addr) = server.accept()?;
-        if let Some(addr) = client_addr {
-            info!("Accepted connection from {addr}");
-        }
+        info!("Accepted connection from {client_addr}");
+
         if let Err(err) = echo(&mut buf, client) {
             error!("echo: {err:0x?}");
         }
