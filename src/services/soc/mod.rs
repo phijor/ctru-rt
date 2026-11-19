@@ -1,0 +1,313 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+use crate::ipc::{MappedReadableBuffer, MappedWritableBuffer, StaticBuffer};
+use crate::ports::srv::Srv;
+use crate::{
+    heap::PageBuffer,
+    ipc::{IpcRequest, IpcResult, ThisProcessId},
+    os::{AsHandle, BorrowedHandle, OwnedHandle, mem::MemoryPermission},
+    result::Result as SystemResult,
+    svc,
+};
+
+use core::net::SocketAddr;
+use core::num::{NonZeroU32, NonZeroUsize};
+
+use log::debug;
+use num_enum::{FromPrimitive, IntoPrimitive};
+
+mod address;
+mod error;
+mod socket;
+
+use address::RawAddr;
+pub use error::{Result, SocketError, SocketErrorCode};
+pub use socket::Socket;
+
+#[derive(Debug)]
+pub struct Soc {
+    handle: OwnedHandle,
+    context: Context,
+}
+
+impl Soc {
+    pub fn init(srv: &Srv, context_num_pages: NonZeroUsize) -> SystemResult<Self> {
+        let context = Context::new(context_num_pages)?;
+        let handle = srv.get_service_handle("soc:U")?;
+
+        debug!("Got service handle: {:08x?}", handle);
+        let _reply = IpcRequest::command(0x1)
+            .parameter(context.buffer.size())
+            .translate_parameter(ThisProcessId)
+            .translate_parameter(context.as_handle())
+            .dispatch(&handle)?;
+
+        debug!("Initialized!");
+        Ok(Self { handle, context })
+    }
+
+    fn conjure_fd(&self, rv: ReturnValue) -> Result<Socket<'_>> {
+        let fd = rv.check()?;
+        Ok(Socket::new(fd, self))
+    }
+
+    pub fn socket(
+        &self,
+        domain: AddressFamily,
+        socket_type: Type,
+        protocol: Protocol,
+    ) -> Result<Socket<'_>> {
+        let mut reply = IpcRequest::command(0x2)
+            .parameters(&[
+                u32::from(u8::from(domain)),
+                u32::from(socket_type),
+                u32::from(protocol),
+            ])
+            .translate_parameter(ThisProcessId)
+            .dispatch(&self.handle)?;
+
+        self.conjure_fd(reply.read_result())
+    }
+
+    fn listen(&self, fd: &Socket<'_>, backlog: u32) -> Result<()> {
+        let mut reply = IpcRequest::command(0x3)
+            .parameter(fd)
+            .parameter(backlog)
+            .translate_parameter(ThisProcessId)
+            .dispatch(&self.handle)?;
+
+        ReturnValue::check(reply.read_result()).map(drop)
+    }
+
+    fn accept(&self, fd: &Socket<'_>) -> Result<(Socket<'_>, Option<SocketAddr>)> {
+        let mut addr = RawAddr::unspec();
+        let addr_bytes = addr.as_out_bytes();
+
+        let mut reply = IpcRequest::command(0x4)
+            .parameter(fd)
+            .parameter(addr_bytes.len())
+            .translate_parameter(ThisProcessId)
+            .dispatch_with_receive_buffers(&self.handle, &mut [addr_bytes])?;
+
+        let fd = self.conjure_fd(reply.read_result())?;
+        let addr = addr.decode();
+
+        Ok((fd, addr))
+    }
+
+    fn bind(&self, socket: &Socket<'_>, addr: &SocketAddr) -> Result<()> {
+        let raw = RawAddr::encode(addr);
+        let addr_bytes = raw.as_in_bytes();
+
+        let mut reply = IpcRequest::command(0x5)
+            .parameter(socket)
+            .parameter(addr_bytes.len())
+            .translate_parameter(ThisProcessId)
+            .translate_parameter(StaticBuffer::new(addr_bytes, 0))
+            .dispatch(&self.handle)?;
+
+        ReturnValue::check(reply.read_result()).map(drop)
+    }
+
+    fn connect(&self, socket: &Socket<'_>, dest: &SocketAddr) -> Result<()> {
+        let addr = RawAddr::encode(dest);
+        let dest_bytes = addr.as_in_bytes();
+
+        let mut reply = IpcRequest::command(0x6)
+            .parameter(socket)
+            .parameter(dest_bytes.len())
+            .translate_parameter(ThisProcessId)
+            .translate_parameter(StaticBuffer::new(dest_bytes, 0))
+            .dispatch(&self.handle)?;
+
+        ReturnValue::check(reply.read_result()).map(drop)
+    }
+
+    fn recvfrom(
+        &self,
+        socket: &Socket<'_>,
+        flags: u8,
+        buf: &mut [u8],
+    ) -> Result<(usize, Option<SocketAddr>)> {
+        let mut src_addr = RawAddr::unspec();
+        let src_addr_len = src_addr.as_out_bytes();
+        let bytes_received = if buf.len() > 0x2000 {
+            let mut reply = IpcRequest::command(0x7)
+                .parameter(socket)
+                .parameter(buf.len())
+                .parameter(flags as u32)
+                .parameter(src_addr_len.len())
+                .translate_parameter(ThisProcessId)
+                .translate_parameter(MappedWritableBuffer::new(buf))
+                .dispatch_with_receive_buffers(&self.handle, &mut [src_addr_len])?;
+
+            ReturnValue::check(reply.read_result())? as usize
+        } else {
+            let mut reply = IpcRequest::command(0x8)
+                .parameter(socket)
+                .parameter(buf.len())
+                .parameter(flags as u32)
+                .parameter(src_addr_len.len())
+                .translate_parameter(ThisProcessId)
+                .dispatch_with_receive_buffers(&self.handle, &mut [buf, src_addr_len])?;
+
+            let _ = ReturnValue::check(reply.read_result())?;
+            reply.read_word() as usize
+        };
+
+        Ok((bytes_received, src_addr.decode()))
+    }
+
+    fn recv(&self, socket: &Socket<'_>, flags: u8, buf: &mut [u8]) -> Result<usize> {
+        let (bytes_received, _) = self.recvfrom(socket, flags, buf)?;
+        Ok(bytes_received)
+    }
+
+    fn sendto(
+        &self,
+        socket: &Socket<'_>,
+        buf: &[u8],
+        flags: u8,
+        dest: Option<&SocketAddr>,
+    ) -> Result<usize> {
+        let addr = match dest {
+            Some(dest) => RawAddr::encode(dest),
+            None => RawAddr::unspec(),
+        };
+        let dest_bytes = addr.as_in_bytes();
+
+        let mut reply = if buf.len() > 0x2000 {
+            IpcRequest::command(0x9)
+                .parameter(socket)
+                .parameter(buf.len())
+                .parameter(u32::from(flags))
+                .parameter(dest_bytes.len())
+                .translate_parameter(ThisProcessId)
+                .translate_parameter(StaticBuffer::new(dest_bytes, 1))
+                .translate_parameter(MappedReadableBuffer::new(buf))
+                .dispatch(&self.handle)?
+        } else {
+            IpcRequest::command(0xA)
+                .parameter(socket)
+                .parameter(buf.len())
+                .parameter(u32::from(flags))
+                .parameter(dest_bytes.len())
+                .translate_parameter(ThisProcessId)
+                .translate_parameter(StaticBuffer::new(buf, 2))
+                .translate_parameter(StaticBuffer::new(dest_bytes, 1))
+                .dispatch(&self.handle)?
+        };
+
+        let bytes_sent: u32 = ReturnValue::check(reply.read_result())?;
+
+        Ok(bytes_sent as usize)
+    }
+
+    fn close_raw(&self, raw_socket: u32) -> Result<()> {
+        let mut reply = IpcRequest::command(0xB)
+            .parameter(raw_socket)
+            .translate_parameter(ThisProcessId)
+            .dispatch(&self.handle)?;
+
+        let _ = ReturnValue::check(reply.read_result())?;
+        Ok(())
+    }
+
+    pub fn gethostid(&self) -> Result<u32> {
+        let mut reply = IpcRequest::command(0x16).dispatch(&self.handle)?;
+
+        Ok(reply.read_word())
+    }
+
+    fn shutdown_sockets(&self) -> SystemResult<()> {
+        IpcRequest::command(0x19).dispatch(&self.handle).map(drop)
+    }
+}
+
+impl Drop for Soc {
+    fn drop(&mut self) {
+        let _ = self.shutdown_sockets();
+    }
+}
+
+#[derive(Debug)]
+struct Context {
+    handle: OwnedHandle,
+    buffer: PageBuffer,
+}
+
+impl Context {
+    fn new(num_pages: NonZeroUsize) -> SystemResult<Self> {
+        debug!("Allocating SOC context of {num_pages:#0x} page(s)");
+        let mut buffer = PageBuffer::allocate_pages(num_pages).expect("Context allocation failed");
+
+        debug!("Creating memory block for buffer {:?}", buffer);
+        let handle = unsafe {
+            svc::create_memory_block(
+                buffer.as_mut_ptr(),
+                MemoryPermission::None,
+                MemoryPermission::Rw,
+            )?
+        };
+        debug!("Got buffer handle: {:08x?}", handle);
+        Ok(Context { handle, buffer })
+    }
+}
+
+impl AsHandle for Context {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        self.handle.as_handle()
+    }
+}
+
+#[derive(Debug, Default, IntoPrimitive, FromPrimitive)]
+#[non_exhaustive]
+#[repr(u8)]
+#[allow(non_camel_case_types)]
+pub enum AddressFamily {
+    #[default]
+    AF_UNSPEC = 0,
+    AF_INET = 2,
+    AF_INET6 = 23,
+}
+
+#[derive(Debug, IntoPrimitive)]
+#[non_exhaustive]
+#[repr(u32)]
+pub enum Type {
+    Stream = 1,
+    Datagram = 2,
+}
+
+#[derive(Debug, IntoPrimitive)]
+#[non_exhaustive]
+#[repr(u32)]
+#[derive(Default)]
+pub enum Protocol {
+    #[default]
+    Default = 0,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReturnValue(i32);
+
+impl ReturnValue {
+    fn check(self) -> Result<u32> {
+        let value = self.0;
+        if let Some(errno) = NonZeroU32::new(value.unsigned_abs())
+            && value < 0
+        {
+            Err(SocketError::SocketErr(SocketErrorCode::new(errno)))
+        } else {
+            Ok(value as u32)
+        }
+    }
+}
+
+impl IpcResult for ReturnValue {
+    fn decode(result: u32) -> Self {
+        Self(result as i32)
+    }
+}

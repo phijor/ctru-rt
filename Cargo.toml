@@ -24,6 +24,9 @@ utf16_lit = "2.0.2"
 test = false
 bench = false
 
+[dev-dependencies]
+ctru-console = { path = "ctru-console" }
+
 [build-dependencies]
 anyhow = "1.0.104"
 
