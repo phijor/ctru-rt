@@ -2,9 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use core::num::NonZeroUsize;
+
+use log::debug;
 use num_enum::IntoPrimitive;
 
-use super::MemoryRegion;
+use crate::{heap::PageBuffer, result::Result, svc};
+
+use super::{AsHandle, BorrowedHandle, MemoryRegion, OwnedHandle};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
@@ -94,4 +99,38 @@ pub struct QueryResult {
     pub permission: MemoryPermission,
     pub state: MemoryState,
     pub page_flags: u32,
+}
+
+#[derive(Debug)]
+pub(crate) struct MemoryBlock {
+    handle: OwnedHandle,
+    buffer: PageBuffer,
+}
+
+impl MemoryBlock {
+    pub fn new(num_pages: NonZeroUsize) -> Result<Self> {
+        let mut buffer = PageBuffer::allocate_pages(num_pages).expect("Context allocation failed");
+
+        debug!("Creating memory block for buffer {:?}", buffer);
+        let handle = unsafe {
+            svc::create_memory_block(
+                buffer.as_mut_ptr(),
+                MemoryPermission::None,
+                MemoryPermission::Rw,
+            )?
+        };
+
+        debug!("Got buffer handle: {:08x?}", handle);
+        Ok(MemoryBlock { handle, buffer })
+    }
+
+    pub fn size(&self) -> usize {
+        self.buffer.size()
+    }
+}
+
+impl AsHandle for MemoryBlock {
+    fn as_handle(&self) -> BorrowedHandle<'_> {
+        self.handle.as_handle()
+    }
 }

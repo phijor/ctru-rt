@@ -3,13 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::ipc::{MappedReadableBuffer, MappedWritableBuffer, StaticBuffer};
+use crate::os::mem::MemoryBlock;
 use crate::ports::srv::Srv;
 use crate::{
-    heap::PageBuffer,
     ipc::{IpcRequest, IpcResult, ThisProcessId},
-    os::{AsHandle, BorrowedHandle, OwnedHandle, mem::MemoryPermission},
+    os::{AsHandle, OwnedHandle},
     result::Result as SystemResult,
-    svc,
 };
 
 use core::net::SocketAddr;
@@ -31,17 +30,18 @@ pub use tcp::{TcpListener, TcpStream};
 #[derive(Debug)]
 pub struct Soc {
     handle: OwnedHandle,
-    context: Context,
+    context: MemoryBlock,
 }
 
 impl Soc {
     pub fn init(srv: &Srv, context_num_pages: NonZeroUsize) -> SystemResult<Self> {
-        let context = Context::new(context_num_pages)?;
+        debug!("Allocating SOC context of {context_num_pages:#0x} page(s)");
+        let context = MemoryBlock::new(context_num_pages)?;
         let handle = srv.get_service_handle("soc:U")?;
 
         debug!("Got service handle: {:08x?}", handle);
         let _reply = IpcRequest::command(0x1)
-            .parameter(context.buffer.size())
+            .parameter(context.size())
             .translate_parameter(ThisProcessId)
             .translate_parameter(context.as_handle())
             .dispatch(&handle)?;
@@ -231,36 +231,6 @@ impl Soc {
 impl Drop for Soc {
     fn drop(&mut self) {
         let _ = self.shutdown_sockets();
-    }
-}
-
-#[derive(Debug)]
-struct Context {
-    handle: OwnedHandle,
-    buffer: PageBuffer,
-}
-
-impl Context {
-    fn new(num_pages: NonZeroUsize) -> SystemResult<Self> {
-        debug!("Allocating SOC context of {num_pages:#0x} page(s)");
-        let mut buffer = PageBuffer::allocate_pages(num_pages).expect("Context allocation failed");
-
-        debug!("Creating memory block for buffer {:?}", buffer);
-        let handle = unsafe {
-            svc::create_memory_block(
-                buffer.as_mut_ptr(),
-                MemoryPermission::None,
-                MemoryPermission::Rw,
-            )?
-        };
-        debug!("Got buffer handle: {:08x?}", handle);
-        Ok(Context { handle, buffer })
-    }
-}
-
-impl AsHandle for Context {
-    fn as_handle(&self) -> BorrowedHandle<'_> {
-        self.handle.as_handle()
     }
 }
 
