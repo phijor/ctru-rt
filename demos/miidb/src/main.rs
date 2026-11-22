@@ -166,12 +166,7 @@ fn run() -> Result<()> {
     info!("Got archive handle: {archive:?}");
 
     const PATH: Path = ctru_rt::utf16_path!("/CFL_DB.dat");
-    let cfldb = fs.open_file(
-        &archive,
-        PATH,
-        OpenFlags::READ | OpenFlags::WRITE,
-        Attributes::NONE,
-    )?;
+    let cfldb = fs.open_file(&archive, PATH, OpenFlags::READ, Attributes::NONE)?;
 
     info!("Got CFL_DB handle: {cfldb:#0x?}");
 
