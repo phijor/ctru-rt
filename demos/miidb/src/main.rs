@@ -7,8 +7,12 @@
 
 extern crate alloc;
 
-use alloc::{string::String, vec::Vec};
-use core::{fmt, mem::offset_of, panic::PanicInfo};
+use alloc::vec::Vec;
+use core::{
+    fmt::{self, Write as _},
+    mem::offset_of,
+    panic::PanicInfo,
+};
 
 use zerocopy::{
     FromBytes, Immutable, KnownLayout, Unaligned,
@@ -48,20 +52,33 @@ struct CflDb {
 
 const _: () = assert!(size_of::<CflDb>() == 0x23f8);
 
-fn decode_utf16(units: &[le::U16]) -> Option<String> {
-    let mut name = String::with_capacity(units.len());
+/// A NUL-terminated UTF-16LE string, decoded on the fly when formatted.
+///
+/// Unpaired surrogates are shown as [`char::REPLACEMENT_CHARACTER`].
+#[derive(Clone, Copy)]
+struct Utf16Str<'a>(&'a [le::U16]);
 
-    let chars = units.iter().map(|c| c.get());
-
-    for c in char::decode_utf16(chars) {
-        match c {
-            Ok('\0') => return Some(name),
-            Ok(c) => name.push(c),
-            Err(_) => return None,
-        }
+impl Utf16Str<'_> {
+    fn chars(self) -> impl Iterator<Item = char> {
+        let units = self.0.iter().map(|c| c.get()).take_while(|&c| c != 0);
+        char::decode_utf16(units).map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
     }
+}
 
-    Some(name)
+impl fmt::Display for Utf16Str<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.chars().try_for_each(|c| f.write_char(c))
+    }
+}
+
+impl fmt::Debug for Utf16Str<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_char('"')?;
+        for c in self.chars() {
+            write!(f, "{}", c.escape_debug())?;
+        }
+        f.write_char('"')
+    }
 }
 
 /// A Mii as stored in the Mii Maker section of the database.
@@ -106,12 +123,12 @@ impl Mii {
         self.position >> 4
     }
 
-    fn name(&self) -> Option<String> {
-        decode_utf16(&self.name)
+    fn name(&self) -> Utf16Str<'_> {
+        Utf16Str(&self.name)
     }
 
-    fn author(&self) -> Option<String> {
-        decode_utf16(&self.author)
+    fn author(&self) -> Utf16Str<'_> {
+        Utf16Str(&self.author)
     }
 }
 
@@ -124,6 +141,14 @@ impl fmt::Debug for Mii {
             .field("name", &self.name())
             .field("author", &self.author())
             .finish()
+    }
+}
+
+impl fmt::Display for Mii {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let special = if self.is_special() { '*' } else { ' ' };
+
+        write!(f, "[{special}] {} by {}", self.name(), self.author())
     }
 }
 
@@ -171,7 +196,7 @@ fn run() -> Result<()> {
     miis.sort_by_key(|mii| (mii.page(), mii.slot()));
 
     for mii in miis {
-        info!("Mii on page {}, slot {}: {mii:?}", mii.page(), mii.slot());
+        info!("Mii on page {}, slot {}: {mii}", mii.page(), mii.slot());
     }
 
     Ok(())
