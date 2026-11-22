@@ -19,16 +19,23 @@ use zerocopy::{
     byteorder::{big_endian as be, little_endian as le},
 };
 
+use ctru_console::Console;
 use ctru_rt::{
     debug::{
-        init_log,
-        log::{error, info},
+        SvcDebugLog,
+        log::{LevelFilter, error, info},
     },
     entry,
+    graphics::Graphics,
     ports::srv::Srv,
     result::{ErrorCode, Level, Module, Result, Summary},
-    services::fs::{self, ArchiveId, Attributes, MediaType, OpenFlags, Path},
-    svc::{self, Timeout},
+    services::{
+        apt::AptLock,
+        fs::{self, ArchiveId, Attributes, MediaType, OpenFlags, Path},
+        gsp::gpu::{Gpu, Screen},
+        hid::Hid,
+    },
+    thread,
 };
 
 #[panic_handler]
@@ -152,9 +159,8 @@ impl fmt::Display for Mii {
     }
 }
 
-fn run() -> Result<()> {
-    let srv = Srv::init()?;
-
+/// Read the Mii database and log the Miis in it, returning how many there are.
+fn load_miis(srv: Srv) -> Result<usize> {
     let fs = fs::Fs::init(&srv)?;
 
     let archive = {
@@ -168,7 +174,7 @@ fn run() -> Result<()> {
     const PATH: Path = ctru_rt::utf16_path!("/CFL_DB.dat");
     let cfldb = fs.open_file(&archive, PATH, OpenFlags::READ, Attributes::NONE)?;
 
-    info!("Got CFL_DB handle: {cfldb:#0x?}");
+    info!("Got CFL_DB handle: {cfldb:0x?}");
 
     let size = cfldb.size()?;
     info!("File size: {size:#0x}");
@@ -190,22 +196,59 @@ fn run() -> Result<()> {
     let mut miis: Vec<&Mii> = db.miis.iter().filter(|mii| !mii.is_empty()).collect();
     miis.sort_by_key(|mii| (mii.page(), mii.slot()));
 
-    for mii in miis {
-        info!("Mii on page {}, slot {}: {mii}", mii.page(), mii.slot());
+    for mii in &miis {
+        info!("{}/{}: {mii}", mii.page(), mii.slot());
     }
 
-    Ok(())
+    Ok(miis.len())
+}
+
+fn run(srv: &Srv, apt: AptLock) -> Result<!> {
+    let log = ctru_console::init_log(Screen::Top, LevelFilter::Info)
+        .expect("Failed to initialize console logger");
+    let mut bottom = Console::new(Screen::Bottom);
+
+    let mut gpu = Gpu::init(srv)?;
+    let mut gfx = Graphics::init_default(&mut gpu)?;
+    let hid = Hid::init(srv)?;
+
+    let mut loader = Some({
+        let srv = srv.try_duplicate()?;
+        thread::spawn(move || load_miis(srv))?
+    });
+
+    bottom.put_strln("Loading Mii database...");
+    while !hid.last_keypad().start() {
+        if let Some(loader) = loader.take_if(|loader| !loader.is_running()) {
+            let _ = match loader.join()? {
+                Some(Ok(count)) => writeln!(bottom, "Found {count} Miis."),
+                Some(Err(err)) => writeln!(bottom, "Failed to load: {err:?}"),
+                None => writeln!(bottom, "Loader thread did not return."),
+            };
+            bottom.put_strln("Press START to exit.");
+        }
+
+        bottom.render(&mut gfx);
+        log.with_console(|top| top.render(&mut gfx));
+
+        gfx.swap_buffers()?;
+        gfx.wait_vblank0()?;
+    }
+
+    apt.exit()
+}
+
+fn init() -> Result<(Srv, AptLock)> {
+    let srv = Srv::init()?;
+    let apt = AptLock::init(srv.try_duplicate()?)?;
+
+    Ok((srv, apt))
 }
 
 #[entry]
-fn main() -> ! {
-    init_log().expect("Failed to initialize logger");
+fn main() {
+    let (srv, apt) = init().expect("Basic services should get initialized");
 
-    if let Err(e) = run() {
-        error!("Failed to run MiiDB example: {:?}", e);
-    }
-
-    loop {
-        svc::sleep_thread(Timeout::forever());
-    }
+    let Err(err) = run(&srv, apt);
+    let _ = write!(SvcDebugLog, "Failed to run: {err:?}");
 }
