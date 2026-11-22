@@ -7,8 +7,13 @@
 
 extern crate alloc;
 
-use alloc::{boxed::Box, string::String};
-use core::{fmt, panic::PanicInfo};
+use alloc::string::String;
+use core::{fmt, mem::offset_of, panic::PanicInfo};
+
+use zerocopy::{
+    FromBytes, Immutable, KnownLayout, Unaligned,
+    byteorder::{big_endian as be, little_endian as le},
+};
 
 use ctru_rt::{
     debug::{
@@ -27,33 +32,42 @@ fn panic_handler(info: &PanicInfo) -> ! {
     ctru_rt::panic::exit_process(info)
 }
 
-struct ClfDb {
-    data: Box<[u8]>,
+/// Number of slots in each Mii array of the database.
+const MII_SLOTS: usize = 100;
+
+/// Layout of the start of `CFL_DB.dat`, up to the end of the invitation order indices.
+///
+/// See <https://www.3dbrew.org/wiki/Mii#Mii_Database>.
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct CflDb {
+    /// `"CFOG"`
+    magic: [u8; 4],
+    version: be::U32,
+    /// Miis saved in Mii Maker, in no particular order.
+    miis: [Mii; MII_SLOTS],
+    /// The `"CFHE"` section and the checksum over everything before it.
+    _cfhe: [u8; 0xc820 - 0x23f8],
+    /// `"CFRA"`
+    invitations_magic: [u8; 4],
+    invitation_count: le::U32,
+    invitation_order: [u8; MII_SLOTS],
 }
 
-impl ClfDb {
-    pub fn version(&self) -> u32 {
-        u32::from_be_bytes(self.data.get(0x4..0x8).unwrap().try_into().unwrap())
-    }
+const _: () = assert!(offset_of!(CflDb, invitations_magic) == 0xc820);
+const _: () = assert!(size_of::<CflDb>() == 0xc88c);
 
-    pub fn miis(&self) -> Option<&[u8]> {
-        self.data.get(0x8..0x8 + (100 * 0x5c))
-    }
-
-    pub fn mii_indices(&self) -> Option<&[u8]> {
-        let count = *self.data.get(0xc824)? as usize;
-        self.data.get(0xC828..0xC828 + count.min(100))
+impl CflDb {
+    fn invitation_order(&self) -> &[u8] {
+        let count = usize::try_from(self.invitation_count.get()).unwrap_or(usize::MAX);
+        &self.invitation_order[..count.min(MII_SLOTS)]
     }
 }
 
-fn decode_utf16_bytes(bytes: &[u8]) -> Option<String> {
-    let mut name = String::with_capacity(bytes.len() / 2);
+fn decode_utf16(units: &[le::U16]) -> Option<String> {
+    let mut name = String::with_capacity(units.len());
 
-    let chars = bytes
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|&c| u16::from_le_bytes(c));
+    let chars = units.iter().map(|c| c.get());
 
     for c in char::decode_utf16(chars) {
         match c {
@@ -66,51 +80,53 @@ fn decode_utf16_bytes(bytes: &[u8]) -> Option<String> {
     Some(name)
 }
 
-struct Mii<'mii> {
-    data: &'mii [u8; 0x5c],
+/// A Mii as stored in the Mii Maker section of the database.
+///
+/// See <https://www.3dbrew.org/wiki/Mii#Mii_format>.
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
+#[repr(C)]
+struct Mii {
+    /// Always 3, or 0 for an empty slot.
+    version: u8,
+    _flags: u8,
+    _position: u8,
+    _device: u8,
+    system_id: be::U64,
+    mii_id: be::U32,
+    _creator_mac: [u8; 6],
+    _padding: [u8; 2],
+    _details: [u8; 2],
+    name: [le::U16; 10],
+    _appearance: [u8; 0x48 - 0x2e],
+    author: [le::U16; 10],
 }
 
-impl Mii<'_> {
-    fn get_u32(&self, idx: usize) -> u32 {
-        let bytes: &[u8; 4] = self.data.get(idx..idx + 4).unwrap().try_into().unwrap();
-        u32::from_be_bytes(*bytes)
-    }
+const _: () = assert!(offset_of!(Mii, name) == 0x1a);
+const _: () = assert!(size_of::<Mii>() == 0x5c);
 
-    fn get_u64(&self, idx: usize) -> u64 {
-        let bytes: &[u8; 8] = self.data.get(idx..idx + 8).unwrap().try_into().unwrap();
-        u64::from_be_bytes(*bytes)
-    }
-
-    fn id(&self) -> u32 {
-        self.get_u32(0x0)
-    }
-
-    fn system_id(&self) -> u64 {
-        self.get_u64(0x4)
+impl Mii {
+    fn is_empty(&self) -> bool {
+        self.version == 0
     }
 
     fn is_special(&self) -> bool {
-        (self.get_u32(0xc) & (1 << 31)) == 0
+        (self.mii_id.get() & (1 << 31)) == 0
     }
 
     fn name(&self) -> Option<String> {
-        self.data
-            .get(0x1A..0x1A + 0x14)
-            .and_then(decode_utf16_bytes)
+        decode_utf16(&self.name)
     }
 
     fn author(&self) -> Option<String> {
-        self.data
-            .get(0x48..0x48 + 0x14)
-            .and_then(decode_utf16_bytes)
+        decode_utf16(&self.author)
     }
 }
 
-impl fmt::Debug for Mii<'_> {
+impl fmt::Debug for Mii {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Mii")
-            .field("id", &format_args!("{:#0x}", &self.id()))
-            .field("system_id", &format_args!("{:#0x}", &self.system_id()))
+            .field("id", &format_args!("{:#0x}", self.mii_id.get()))
+            .field("system_id", &format_args!("{:#0x}", self.system_id.get()))
             .field("is_special", &(if self.is_special() { "★" } else { "∘" }))
             .field("name", &self.name())
             .field("author", &self.author())
@@ -147,36 +163,21 @@ fn run() -> Result<()> {
     let contents = cfldb.read_vec()?;
     info!("Read {:#0x} bytes from the DB", contents.len());
 
-    if let Some(header) = contents.get(0..4) {
-        info!("Header: {:0x?}", header);
-    }
-
-    let db = ClfDb {
-        data: contents.into_boxed_slice(),
-    };
-
-    info!("Version: {:#0x}", db.version());
-
     const NOT_FOUND: ErrorCode =
         ErrorCode::new(Level::Info, Summary::NotFound, Module::Application, 0);
 
-    let Some(miis) = db.miis() else {
-        error!("No Miis in database");
+    let Ok((db, _)) = CflDb::ref_from_prefix(&contents) else {
+        error!("Database is truncated");
         return Err(NOT_FOUND);
     };
 
-    let Some(indices) = db.mii_indices() else {
-        error!("No Miis in database");
-        return Err(NOT_FOUND);
-    };
+    info!("Header: {:0x?}", db.magic);
+    info!("Version: {:#0x}", db.version.get());
 
-    for ix in indices {
-        let ix = *ix as usize;
-        if let Some(mii) = miis.get(ix * 0x5c..(ix + 1) * 0x5c) {
-            let mii = Mii {
-                data: mii.try_into().unwrap(),
-            };
-            if mii.id() == 0 {
+    for &ix in db.invitation_order() {
+        let ix = usize::from(ix);
+        if let Some(mii) = db.miis.get(ix) {
+            if mii.is_empty() {
                 continue;
             }
             info!("Mii at index {ix:02}: {mii:?}");

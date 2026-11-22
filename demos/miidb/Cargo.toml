@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 ctru-rt = { path = "../.." }
+zerocopy = { version = "0.8.63", features = ["derive"] }
 
 [[bin]]
 name = "miidb"
