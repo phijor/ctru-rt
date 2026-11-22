@@ -7,7 +7,7 @@
 
 extern crate alloc;
 
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use core::{fmt, mem::offset_of, panic::PanicInfo};
 
 use zerocopy::{
@@ -32,10 +32,7 @@ fn panic_handler(info: &PanicInfo) -> ! {
     ctru_rt::panic::exit_process(info)
 }
 
-/// Number of slots in each Mii array of the database.
-const MII_SLOTS: usize = 100;
-
-/// Layout of the start of `CFL_DB.dat`, up to the end of the invitation order indices.
+/// Layout of the Mii Maker (`"CFOG"`) section at the start of `CFL_DB.dat`.
 ///
 /// See <https://www.3dbrew.org/wiki/Mii#Mii_Database>.
 #[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
@@ -44,25 +41,12 @@ struct CflDb {
     /// `"CFOG"`
     magic: [u8; 4],
     version: be::U32,
-    /// Miis saved in Mii Maker, in no particular order.
-    miis: [Mii; MII_SLOTS],
-    /// The `"CFHE"` section and the checksum over everything before it.
-    _cfhe: [u8; 0xc820 - 0x23f8],
-    /// `"CFRA"`
-    invitations_magic: [u8; 4],
-    invitation_count: le::U32,
-    invitation_order: [u8; MII_SLOTS],
+    /// Miis saved in Mii Maker. Their order in the file is unrelated to the one shown in-app,
+    /// see [`Mii::position`].
+    miis: [Mii; 100],
 }
 
-const _: () = assert!(offset_of!(CflDb, invitations_magic) == 0xc820);
-const _: () = assert!(size_of::<CflDb>() == 0xc88c);
-
-impl CflDb {
-    fn invitation_order(&self) -> &[u8] {
-        let count = usize::try_from(self.invitation_count.get()).unwrap_or(usize::MAX);
-        &self.invitation_order[..count.min(MII_SLOTS)]
-    }
-}
+const _: () = assert!(size_of::<CflDb>() == 0x23f8);
 
 fn decode_utf16(units: &[le::U16]) -> Option<String> {
     let mut name = String::with_capacity(units.len());
@@ -89,7 +73,8 @@ struct Mii {
     /// Always 3, or 0 for an empty slot.
     version: u8,
     _flags: u8,
-    _position: u8,
+    /// Position on the selection screen: page index in bits 0-3, slot index in bits 4-7.
+    position: u8,
     _device: u8,
     system_id: be::U64,
     mii_id: be::U32,
@@ -111,6 +96,14 @@ impl Mii {
 
     fn is_special(&self) -> bool {
         (self.mii_id.get() & (1 << 31)) == 0
+    }
+
+    fn page(&self) -> u8 {
+        self.position & 0xf
+    }
+
+    fn slot(&self) -> u8 {
+        self.position >> 4
     }
 
     fn name(&self) -> Option<String> {
@@ -174,14 +167,11 @@ fn run() -> Result<()> {
     info!("Header: {:0x?}", db.magic);
     info!("Version: {:#0x}", db.version.get());
 
-    for &ix in db.invitation_order() {
-        let ix = usize::from(ix);
-        if let Some(mii) = db.miis.get(ix) {
-            if mii.is_empty() {
-                continue;
-            }
-            info!("Mii at index {ix:02}: {mii:?}");
-        }
+    let mut miis: Vec<&Mii> = db.miis.iter().filter(|mii| !mii.is_empty()).collect();
+    miis.sort_by_key(|mii| (mii.page(), mii.slot()));
+
+    for mii in miis {
+        info!("Mii on page {}, slot {}: {mii:?}", mii.page(), mii.slot());
     }
 
     Ok(())
