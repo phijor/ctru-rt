@@ -21,8 +21,8 @@ use ctru_rt::{
         gsp::gpu::{Gpu, Screen, ScreenDimensions},
         hid::Hid,
     },
+    debug::log::{error, info},
 };
-use log::{error, info};
 
 #[panic_handler]
 fn panic_handler(info: &PanicInfo) -> ! {

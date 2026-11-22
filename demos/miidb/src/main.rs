@@ -9,10 +9,12 @@ extern crate alloc;
 
 use alloc::{boxed::Box, string::String};
 use core::{fmt, panic::PanicInfo};
-use log::{error, info};
 
 use ctru_rt::{
-    debug::init_log,
+    debug::{
+        init_log,
+        log::{error, info},
+    },
     entry,
     ports::srv::Srv,
     result::{ErrorCode, Level, Module, Result, Summary},

@@ -28,4 +28,4 @@ bench = false
 anyhow = "1.0.104"
 
 [workspace]
-members = ["ctru-console", "ctru-rt-macros"]
+members = ["ctru-console", "ctru-rt-macros", "demos/*"]

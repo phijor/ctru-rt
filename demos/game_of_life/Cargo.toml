@@ -1,0 +1,15 @@
+[package]
+name = "game-of-life"
+version = "0.1.0"
+authors = ["Philipp Joram <mail@phijor.me>"]
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+
+[dependencies]
+ctru-rt = { path = "../.." }
+
+[[bin]]
+name = "game-of-life"
+test = false
+bench = false
