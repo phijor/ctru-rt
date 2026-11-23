@@ -179,7 +179,7 @@ impl Soc {
         // We cannot simply pass `&mut []`, however. The pointer of this slice is dangling; it
         // points to 0x1. Since the service always expects a valid address (even if the address
         // length is 0), pass an empty subslice of stack variable.
-        let mut tmp = [0u8; 0];
+        let mut tmp = [0u8; 1];
         let ignore_src_addr = &mut tmp[..0];
         let bytes_received = self.recvfrom_src_addr(socket, flags, buf, ignore_src_addr)?;
         Ok(bytes_received)
