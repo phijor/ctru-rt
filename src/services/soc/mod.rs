@@ -127,23 +127,22 @@ impl Soc {
         ReturnValue::check(reply.read_result()).map(drop)
     }
 
-    fn recvfrom(
+    fn recvfrom_src_addr(
         &self,
         socket: &Socket<'_>,
         flags: u8,
         buf: &mut [u8],
-    ) -> Result<(usize, Option<SocketAddr>)> {
-        let mut src_addr = RawAddr::unspec();
-        let src_addr_len = src_addr.as_out_bytes();
+        src_addr: &mut [u8],
+    ) -> Result<usize> {
         let bytes_received = if buf.len() > 0x2000 {
             let mut reply = IpcRequest::command(0x7)
                 .parameter(socket)
                 .parameter(buf.len())
                 .parameter(flags as u32)
-                .parameter(src_addr_len.len())
+                .parameter(src_addr.len())
                 .translate_parameter(ThisProcessId)
                 .translate_parameter(MappedWritableBuffer::new(buf))
-                .dispatch_with_receive_buffers(&self.handle, &mut [src_addr_len])?;
+                .dispatch_with_receive_buffers(&self.handle, &mut [src_addr])?;
 
             ReturnValue::check(reply.read_result())? as usize
         } else {
@@ -151,19 +150,36 @@ impl Soc {
                 .parameter(socket)
                 .parameter(buf.len())
                 .parameter(flags as u32)
-                .parameter(src_addr_len.len())
+                .parameter(src_addr.len())
                 .translate_parameter(ThisProcessId)
-                .dispatch_with_receive_buffers(&self.handle, &mut [buf, src_addr_len])?;
+                .dispatch_with_receive_buffers(&self.handle, &mut [buf, src_addr])?;
 
             let _ = ReturnValue::check(reply.read_result())?;
             reply.read_word() as usize
         };
 
+        Ok(bytes_received)
+    }
+
+    fn recvfrom(
+        &self,
+        socket: &Socket<'_>,
+        flags: u8,
+        buf: &mut [u8],
+    ) -> Result<(usize, Option<SocketAddr>)> {
+        let mut src_addr = RawAddr::unspec();
+        let bytes_received = self.recvfrom_src_addr(socket, flags, buf, src_addr.as_out_bytes())?;
         Ok((bytes_received, src_addr.decode()))
     }
 
     fn recv(&self, socket: &Socket<'_>, flags: u8, buf: &mut [u8]) -> Result<usize> {
-        let (bytes_received, _) = self.recvfrom(socket, flags, buf)?;
+        // `recv` doesn't need to decode a source address, so we omit it by passing an empty slice.
+        // We cannot simply pass `&mut []`, however. The pointer of this slice is dangling; it
+        // points to 0x1. Since the service always expects a valid address (even if the address
+        // length is 0), pass an empty subslice of stack variable.
+        let mut tmp = [0u8; 0];
+        let ignore_src_addr = &mut tmp[..0];
+        let bytes_received = self.recvfrom_src_addr(socket, flags, buf, ignore_src_addr)?;
         Ok(bytes_received)
     }
 
