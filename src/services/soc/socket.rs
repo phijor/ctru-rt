@@ -2,8 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::{Flags, Result, Soc};
+use super::{Flags, PollEvents, PollFd, Result, Soc};
 use crate::ipc::{CommandBufferWriter, Parameter};
+use crate::svc::Timeout;
 
 use core::mem::ManuallyDrop;
 use core::net::SocketAddr;
@@ -71,6 +72,15 @@ impl Socket<'_> {
         dest: Option<&SocketAddr>,
     ) -> Result<usize> {
         self.soc.sendto(self, buf, flags, dest)
+    }
+
+    /// Wait until one of `events` occurs on this socket, or until `timeout` passes.
+    ///
+    /// Returns the events that occurred, which are empty on timeout.
+    pub(super) fn poll(&self, events: PollEvents, timeout: Timeout) -> Result<PollEvents> {
+        let mut fds = [PollFd::new(self.fd, events)];
+        self.soc.poll(&mut fds, timeout)?;
+        Ok(fds[0].revents)
     }
 
     /// Explicitly close the socket, reporting any errors on close.

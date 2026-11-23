@@ -9,7 +9,7 @@ use crate::{
     ipc::{IpcRequest, IpcResult, Parameter, ThisProcessId},
     os::{AsHandle, BorrowedHandle, OwnedHandle, mem::MemoryPermission},
     result::Result as SystemResult,
-    svc,
+    svc::{self, Timeout},
 };
 
 use core::net::SocketAddr;
@@ -21,12 +21,14 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 
 mod address;
 mod error;
+mod poll;
 mod socket;
 mod tcp;
 mod udp;
 
 use address::RawAddr;
 pub use error::{Result, SocketError, SocketErrorCode};
+use poll::{PollEvents, PollFd, timeout_to_ms};
 use socket::Socket;
 pub use tcp::{TcpListener, TcpStream};
 pub use udp::UdpSocket;
@@ -234,6 +236,38 @@ impl Soc {
 
         let _ = ReturnValue::check(reply.read_result())?;
         Ok(())
+    }
+
+    /// Wait until one of the requested events occurs on any of `fds`, or until `timeout` passes.
+    ///
+    /// On return, the `revents` of each entry hold the events that occurred on its socket.
+    /// Returns the number of entries with non-empty `revents`, which is 0 on timeout.
+    fn poll(&self, fds: &mut [PollFd], timeout: Timeout) -> Result<usize> {
+        if fds.is_empty() {
+            return Err(SocketError::SocketErr(SocketErrorCode::EINVAL));
+        }
+
+        fds.iter_mut()
+            .for_each(|fd| fd.revents = PollEvents::empty());
+
+        // The socket module reads the array from one static buffer and writes it back to another.
+        // Receive into a copy, so that the two buffers don't alias.
+        let mut out = fds.to_vec();
+
+        let mut reply = IpcRequest::command(0x14)
+            .parameter(fds.len())
+            .parameter(timeout_to_ms(timeout) as u32)
+            .translate_parameter(ThisProcessId)
+            .translate_parameter(StaticBuffer::new(PollFd::as_in_bytes(fds), 10))
+            .dispatch_with_receive_buffers(&self.handle, &mut [PollFd::as_out_bytes(&mut out)])?;
+
+        let ready = ReturnValue::check(reply.read_result())? as usize;
+
+        for (fd, out) in fds.iter_mut().zip(&out) {
+            fd.revents = out.revents;
+        }
+
+        Ok(ready)
     }
 
     pub fn gethostid(&self) -> Result<u32> {
