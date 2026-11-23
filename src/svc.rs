@@ -513,6 +513,10 @@ impl Timeout {
         Self::from_nanoseconds(0)
     }
 
+    pub const fn as_nanoseconds(self) -> i64 {
+        self.0
+    }
+
     #[inline]
     pub(crate) const fn reg_high(self) -> u32 {
         ((self.0 as u64) >> 32) as u32
