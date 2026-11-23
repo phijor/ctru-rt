@@ -4,7 +4,7 @@
 
 use core::net::SocketAddr;
 
-use super::{AddressFamily, Protocol, Result, Soc, Socket, SocketError, Type};
+use super::{AddressFamily, Flags, Protocol, Result, Soc, Socket, SocketError, Type};
 
 #[derive(Debug)]
 pub struct TcpListener<'soc> {
@@ -55,11 +55,11 @@ impl<'soc> TcpStream<'soc> {
     }
 
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.peer.recv(0, buf)
+        self.peer.recv(Flags::NONE, buf)
     }
 
     pub fn write(&self, buf: &[u8]) -> Result<usize> {
-        self.peer.sendto(buf, 0, None)
+        self.peer.sendto(buf, Flags::NONE, None)
     }
 
     /// Write all of `buf`, calling [`write`](Self::write) until it has been sent.

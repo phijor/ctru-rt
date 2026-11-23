@@ -4,7 +4,7 @@
 
 use core::net::SocketAddr;
 
-use super::{AddressFamily, Protocol, Result, Soc, Socket, SocketError, Type};
+use super::{AddressFamily, Flags, Protocol, Result, Soc, Socket, SocketError, Type};
 
 pub struct UdpSocket<'soc> {
     socket: Socket<'soc>,
@@ -27,7 +27,7 @@ impl UdpSocket<'_> {
     }
 
     pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
-        let (bytes_read, Some(peer_addr)) = self.socket.recvfrom(0, buf)? else {
+        let (bytes_read, Some(peer_addr)) = self.socket.recvfrom(Flags::NONE, buf)? else {
             return Err(SocketError::MissingAddress);
         };
 
@@ -35,14 +35,14 @@ impl UdpSocket<'_> {
     }
 
     pub fn recv(&self, buf: &mut [u8]) -> Result<usize> {
-        self.socket.recv(0, buf)
+        self.socket.recv(Flags::NONE, buf)
     }
 
     pub fn send_to(&self, buf: &[u8], dest: &SocketAddr) -> Result<usize> {
-        self.socket.sendto(buf, 0, Some(dest))
+        self.socket.sendto(buf, Flags::NONE, Some(dest))
     }
 
     pub fn send(&self, buf: &[u8]) -> Result<usize> {
-        self.socket.sendto(buf, 0, None)
+        self.socket.sendto(buf, Flags::NONE, None)
     }
 }

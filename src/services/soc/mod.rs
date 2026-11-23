@@ -6,7 +6,7 @@ use crate::ipc::{MappedReadableBuffer, MappedWritableBuffer, StaticBuffer};
 use crate::ports::srv::Srv;
 use crate::{
     heap::PageBuffer,
-    ipc::{IpcRequest, IpcResult, ThisProcessId},
+    ipc::{IpcRequest, IpcResult, Parameter, ThisProcessId},
     os::{AsHandle, BorrowedHandle, OwnedHandle, mem::MemoryPermission},
     result::Result as SystemResult,
     svc,
@@ -14,6 +14,7 @@ use crate::{
 
 use core::net::SocketAddr;
 use core::num::{NonZeroU32, NonZeroUsize};
+use core::ops::BitOr;
 
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
@@ -132,7 +133,7 @@ impl Soc {
     fn recvfrom_src_addr(
         &self,
         socket: &Socket<'_>,
-        flags: u8,
+        flags: Flags,
         buf: &mut [u8],
         src_addr: &mut [u8],
     ) -> Result<usize> {
@@ -140,7 +141,7 @@ impl Soc {
             let mut reply = IpcRequest::command(0x7)
                 .parameter(socket)
                 .parameter(buf.len())
-                .parameter(flags as u32)
+                .parameter(flags)
                 .parameter(src_addr.len())
                 .translate_parameter(ThisProcessId)
                 .translate_parameter(MappedWritableBuffer::new(buf))
@@ -151,7 +152,7 @@ impl Soc {
             let mut reply = IpcRequest::command(0x8)
                 .parameter(socket)
                 .parameter(buf.len())
-                .parameter(flags as u32)
+                .parameter(flags)
                 .parameter(src_addr.len())
                 .translate_parameter(ThisProcessId)
                 .dispatch_with_receive_buffers(&self.handle, &mut [buf, src_addr])?;
@@ -166,7 +167,7 @@ impl Soc {
     fn recvfrom(
         &self,
         socket: &Socket<'_>,
-        flags: u8,
+        flags: Flags,
         buf: &mut [u8],
     ) -> Result<(usize, Option<SocketAddr>)> {
         let mut src_addr = RawAddr::unspec();
@@ -174,7 +175,7 @@ impl Soc {
         Ok((bytes_received, src_addr.decode()))
     }
 
-    fn recv(&self, socket: &Socket<'_>, flags: u8, buf: &mut [u8]) -> Result<usize> {
+    fn recv(&self, socket: &Socket<'_>, flags: Flags, buf: &mut [u8]) -> Result<usize> {
         // `recv` doesn't need to decode a source address, so we omit it by passing an empty slice.
         // We cannot simply pass `&mut []`, however. The pointer of this slice is dangling; it
         // points to 0x1. Since the service always expects a valid address (even if the address
@@ -189,7 +190,7 @@ impl Soc {
         &self,
         socket: &Socket<'_>,
         buf: &[u8],
-        flags: u8,
+        flags: Flags,
         dest: Option<&SocketAddr>,
     ) -> Result<usize> {
         let addr = match dest {
@@ -202,7 +203,7 @@ impl Soc {
             IpcRequest::command(0x9)
                 .parameter(socket)
                 .parameter(buf.len())
-                .parameter(u32::from(flags))
+                .parameter(flags)
                 .parameter(dest_bytes.len())
                 .translate_parameter(ThisProcessId)
                 .translate_parameter(StaticBuffer::new(dest_bytes, 1))
@@ -212,7 +213,7 @@ impl Soc {
             IpcRequest::command(0xA)
                 .parameter(socket)
                 .parameter(buf.len())
-                .parameter(u32::from(flags))
+                .parameter(flags)
                 .parameter(dest_bytes.len())
                 .translate_parameter(ThisProcessId)
                 .translate_parameter(StaticBuffer::new(buf, 2))
@@ -313,6 +314,29 @@ enum Type {
 enum Protocol {
     #[default]
     Default = 0,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Flags(u8);
+
+impl Flags {
+    const NONE: Self = Self(0);
+    const PEEK: Self = Self(1 << 1);
+    const DONTWAIT: Self = Self(1 << 2);
+}
+
+impl BitOr for Flags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl Parameter for Flags {
+    fn encode(&self, cmdbuf: &mut crate::ipc::CommandBufferWriter) {
+        cmdbuf.write(u32::from(self.0));
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

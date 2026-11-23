@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use super::{Result, Soc};
+use super::{Flags, Result, Soc};
 use crate::ipc::{CommandBufferWriter, Parameter};
 
 use core::mem::ManuallyDrop;
@@ -52,19 +52,24 @@ impl Socket<'_> {
         self.soc.connect(self, dest)
     }
 
-    pub(super) fn recv(&self, flags: u8, buf: &mut [u8]) -> Result<usize> {
+    pub(super) fn recv(&self, flags: Flags, buf: &mut [u8]) -> Result<usize> {
         self.soc.recv(self, flags, buf)
     }
 
     pub(super) fn recvfrom(
         &self,
-        flags: u8,
+        flags: Flags,
         buf: &mut [u8],
     ) -> Result<(usize, Option<SocketAddr>)> {
         self.soc.recvfrom(self, flags, buf)
     }
 
-    pub(super) fn sendto(&self, buf: &[u8], flags: u8, dest: Option<&SocketAddr>) -> Result<usize> {
+    pub(super) fn sendto(
+        &self,
+        buf: &[u8],
+        flags: Flags,
+        dest: Option<&SocketAddr>,
+    ) -> Result<usize> {
         self.soc.sendto(self, buf, flags, dest)
     }
 
