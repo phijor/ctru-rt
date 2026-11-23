@@ -22,11 +22,13 @@ mod address;
 mod error;
 mod socket;
 mod tcp;
+mod udp;
 
 use address::RawAddr;
 pub use error::{Result, SocketError, SocketErrorCode};
 use socket::Socket;
 pub use tcp::{TcpListener, TcpStream};
+pub use udp::UdpSocket;
 
 #[derive(Debug)]
 pub struct Soc {
