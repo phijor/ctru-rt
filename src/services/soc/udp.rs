@@ -4,7 +4,12 @@
 
 use core::net::SocketAddr;
 
-use super::{AddressFamily, Flags, Protocol, Result, Soc, Socket, SocketError, Type};
+use crate::svc::Timeout;
+
+use super::{
+    AddressFamily, Flags, PollEvents, Protocol, Result, Soc, Socket, SocketError, SocketErrorCode,
+    Type,
+};
 
 pub struct UdpSocket<'soc> {
     socket: Socket<'soc>,
@@ -26,16 +31,49 @@ impl UdpSocket<'_> {
         self.socket.connect(dest)
     }
 
-    pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
-        let (bytes_read, Some(peer_addr)) = self.socket.recvfrom(Flags::NONE, buf)? else {
+    fn recv_from_with_flags(&self, flags: Flags, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
+        let (bytes_read, Some(peer_addr)) = self.socket.recvfrom(flags, buf)? else {
             return Err(SocketError::MissingAddress);
         };
 
         Ok((bytes_read, peer_addr))
     }
 
+    pub fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
+        self.recv_from_with_flags(Flags::NONE, buf)
+    }
+
     pub fn recv(&self, buf: &mut [u8]) -> Result<usize> {
         self.socket.recv(Flags::NONE, buf)
+    }
+
+    /// Try to receive data within the given timeout.
+    ///
+    /// The timeout is rounded up to whole milliseconds.
+    /// [`Timeout::none`] attempts to read immediately,
+    /// [`Timeout::forever`] waits indefinitely.
+    ///
+    /// Returns [`SocketErr(ETIMEDOUT)`][SocketErrorCode::ETIMEDOUT] if no data arrived in time.
+    /// Returns [`SocketErr(EAGAIN)`][SocketErrorCode::EAGAIN] if the socket was signaled ready but no data could be read.
+    pub fn recv_from_timeout(
+        &self,
+        buf: &mut [u8],
+        timeout: Timeout,
+    ) -> Result<(usize, SocketAddr)> {
+        let events = self.socket.poll(PollEvents::IN, timeout)?;
+
+        // The call to poll timed out.
+        if events.is_empty() {
+            return Err(SocketError::SocketErr(SocketErrorCode::ETIMEDOUT));
+        }
+
+        // The socket handle is invalid (should not happen).
+        if events.contains(PollEvents::NVAL) {
+            return Err(SocketError::SocketErr(SocketErrorCode::EBADF));
+        }
+
+        // A packet should be ready. Try to receive data without blocking.
+        self.recv_from_with_flags(Flags::DONTWAIT, buf)
     }
 
     pub fn send_to(&self, buf: &[u8], dest: &SocketAddr) -> Result<usize> {
