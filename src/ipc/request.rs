@@ -163,13 +163,10 @@ impl<'p, S: state::State> IpcRequest<'p, S> {
                     );
                 })
         };
-        let mut reply: IpcReply = if N == 0 {
-            request()?
-        } else {
-            // Set the receive buffer descriptors to point to `receive_buffers`
-            // before sending the request, then clear them after.
-            get_thread_local_storage().with_receive_buffers(receive_buffers, request)?
-        };
+        // Set the receive buffer descriptors to point to `receive_buffers`
+        // before sending the request, then clear them after.
+        let mut reply: IpcReply =
+            get_thread_local_storage().with_receive_buffers(receive_buffers, request)?;
 
         let result = reply.read_result::<ResultCode>();
         Ok((result, reply))

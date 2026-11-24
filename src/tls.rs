@@ -22,6 +22,7 @@ impl ThreadLocalStorage {
         unsafe { self.0.add(0x180) as *mut [Descriptor; N] }
     }
 
+    #[inline]
     pub(crate) fn with_receive_buffers<const N: usize, R>(
         &mut self,
         buffers: &mut [&mut [u8]; N],
