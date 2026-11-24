@@ -295,8 +295,8 @@ pub fn get_system_tick_count() -> u64 {
     unsafe {
         asm!(
             "svc 0x28",
-            lateout("r0") tick_high,
-            lateout("r1") tick_low,
+            lateout("r0") tick_low,
+            lateout("r1") tick_high,
             // The kernel only preserves r4–r11.
             lateout("r2") _,
             lateout("r3") _,
