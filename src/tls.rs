@@ -40,6 +40,7 @@ pub fn get_thread_local_storage() -> ThreadLocalStorage {
     unsafe {
         core::arch::asm!(
             "mrc p15, 0, {0}, c13, c0, 3",
+            options(pure, nomem, nostack, preserves_flags),
             out(reg) data,
         )
     }
