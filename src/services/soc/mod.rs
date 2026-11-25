@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::heap::PageBufferSize;
 use crate::ipc::{MappedReadableBuffer, MappedWritableBuffer, StaticBuffer};
 use crate::ports::srv::Srv;
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
 };
 
 use core::net::SocketAddr;
-use core::num::{NonZeroU32, NonZeroUsize};
+use core::num::NonZeroU32;
 use core::ops::BitOr;
 
 use log::debug;
@@ -40,8 +41,8 @@ pub struct Soc {
 }
 
 impl Soc {
-    pub fn init(srv: &Srv, context_num_pages: NonZeroUsize) -> SystemResult<Self> {
-        let context = Context::new(context_num_pages)?;
+    pub fn init(srv: &Srv, context_size: PageBufferSize) -> SystemResult<Self> {
+        let context = Context::new(context_size)?;
         let handle = srv.get_service_handle("soc:U")?;
 
         debug!("Got service handle: {:08x?}", handle);
@@ -294,9 +295,12 @@ struct Context {
 }
 
 impl Context {
-    fn new(num_pages: NonZeroUsize) -> SystemResult<Self> {
-        debug!("Allocating SOC context of {num_pages:#0x} page(s)");
-        let mut buffer = PageBuffer::allocate_pages(num_pages).expect("Context allocation failed");
+    fn new(size: PageBufferSize) -> SystemResult<Self> {
+        debug!(
+            "Allocating SOC context of {pages:#0x} page(s)",
+            pages = size.pages()
+        );
+        let mut buffer = PageBuffer::allocate(size).expect("Context allocation failed");
 
         debug!("Creating memory block for buffer {:?}", buffer);
         let handle = unsafe {

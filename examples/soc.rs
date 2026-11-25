@@ -6,7 +6,6 @@
 #![no_main]
 
 use core::net::{Ipv4Addr, SocketAddr};
-use core::num::NonZeroUsize;
 use core::panic::PanicInfo;
 
 extern crate alloc;
@@ -14,6 +13,7 @@ use alloc::vec;
 
 use ctru_console::ConsoleLog;
 use ctru_rt::graphics::Graphics;
+use ctru_rt::heap::PageBufferSize;
 use ctru_rt::services::gsp::gpu::Gpu;
 use ctru_rt::services::hid::{Hid, KeyPad};
 use ctru_rt::services::soc::{TcpListener, TcpStream};
@@ -86,8 +86,10 @@ fn echo(recv_buf: &mut [u8], client: TcpStream) -> Result<()> {
 }
 
 fn serve(srv: Srv) -> Result<!> {
-    const CONTEXT_PAGES: NonZeroUsize = NonZeroUsize::new(0x100).unwrap();
-    let soc = Soc::init(&srv, CONTEXT_PAGES)?;
+    // Allocate 1MiB of shared memory for the socket service.
+    // This is a reasonable default for most applications.
+    const CONTEXT_SIZE: PageBufferSize = PageBufferSize::from_mb(1);
+    let soc = Soc::init(&srv, CONTEXT_SIZE)?;
     info!("Initialized soc: {:#0x?}", soc);
     info!("gethostid() = {:03?}", soc.gethostid()?.to_ne_bytes());
 

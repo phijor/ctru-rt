@@ -305,6 +305,70 @@ struct Page([u8; PAGE_SIZE]);
 // `PageBuffer::drop` must reproduce the layout of `Layout::array::<Page>`.
 const _: () = assert!(size_of::<Page>() == PAGE_SIZE && align_of::<Page>() == PAGE_SIZE);
 
+/// A valid size of a page-sized allocation.
+#[derive(Debug, Clone, Copy)]
+pub struct PageBufferSize {
+    count: NonZeroUsize,
+}
+
+impl PageBufferSize {
+    /// The number of pages this size represents.
+    pub const fn pages(&self) -> usize {
+        self.count.get()
+    }
+
+    /// The size of the pages of this size, in bytes.
+    pub const fn as_byte_size(&self) -> NonZeroUsize {
+        const NON_ZERO_PAGE_SIZE: NonZeroUsize = NonZeroUsize::new(PAGE_SIZE).unwrap();
+        self.count.saturating_mul(NON_ZERO_PAGE_SIZE)
+    }
+
+    /// The size of `n` pages.
+    ///
+    /// Returns [`None`] when `n == 0`.
+    #[inline]
+    pub const fn from_pages(n: usize) -> Option<Self> {
+        match NonZeroUsize::new(n) {
+            Some(count) => Some(Self { count }),
+            None => None,
+        }
+    }
+
+    /// A page size that can hold at least this many kilobytes (KiB) of memory.
+    ///
+    /// Returns the size for at least one page, even if `kilobytes == 0`.
+    pub const fn from_kb(kilobytes: usize) -> Self {
+        const KB_PER_PAGE: usize = PAGE_SIZE / 1024;
+        const _: () = assert!(KB_PER_PAGE == 4);
+
+        let pages = match kilobytes.div_ceil(KB_PER_PAGE) {
+            0 => 1,
+            pages => pages,
+        };
+
+        // `pages` is at least 1, so this can never panic.
+        Self::from_pages(pages).unwrap()
+    }
+
+    /// A page size that can hold at least this many megabytes (MiB) of memory.
+    ///
+    /// Returns the size for at least one page, even if `megabytes == 0`.
+    pub const fn from_mb(megabytes: usize) -> Self {
+        Self::from_kb(megabytes.saturating_mul(1024))
+    }
+
+    /// Return a layout suitable for a page-aligned allocation of memory of this size.
+    ///
+    /// On success, returns a layout of size [`self.as_byte_size()`](Self::as_byte_size).
+    /// Returns [`None`] if that size would exceed [`isize::MAX`].
+    const fn layout(&self) -> Option<Layout> {
+        match Layout::array::<Page>(self.pages()) {
+            Ok(layout) => Some(layout),
+            Err(_) => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct PageBuffer {
@@ -312,23 +376,13 @@ pub struct PageBuffer {
 }
 
 impl PageBuffer {
-    /// Allocate `size` = `num_pages * PAGE_SIZE` bytes of uninitialized, page-aligned memory.
+    /// Allocate uninitialized, page-aligned memory.
     ///
     /// Returns an error if `size` overflows [`isize::MAX`].
-    pub fn allocate_pages(
-        num_pages: NonZeroUsize,
-    ) -> ::core::result::Result<Self, PageBufferError> {
-        let layout = Self::layout_from_num_pages(num_pages).ok_or(PageBufferError::Layout)?;
+    pub fn allocate(size: PageBufferSize) -> ::core::result::Result<Self, PageBufferError> {
+        let layout = size.layout().ok_or(PageBufferError::Layout)?;
         let buffer = allocate(&ALLOCATOR, layout).map_err(|_| PageBufferError::Alloc)?;
         Ok(PageBuffer { buffer })
-    }
-
-    /// Return a layout suitable for a page-aligned allocation of `num_pages` pages.
-    const fn layout_from_num_pages(num_pages: NonZeroUsize) -> Option<Layout> {
-        match Layout::array::<Page>(num_pages.get()) {
-            Ok(layout) => Some(layout),
-            Err(_) => None,
-        }
     }
 
     pub const fn as_mut_ptr(&mut self) -> *mut [u8] {
@@ -345,11 +399,11 @@ impl Drop for PageBuffer {
         let Self { buffer } = self;
         unsafe {
             // SAFETY:
-            // `buffer` was allocated with a layout computed by `layout_from_num_pages`,
+            // `buffer` was allocated with a layout computed by `PageBufferSize::layout()`,
             // hence its size is a multiple of `PAGE_SIZE` and does not overflow `isize::MAX`.
             let layout = Layout::from_size_align_unchecked(buffer.len(), align_of::<Page>());
             // SAFETY:
-            // Both `buffer` and `layout` come from a matching allocation in `allocate_pages`.
+            // Both `buffer` and `layout` come from a matching allocation in `allocate`.
             deallocate(&ALLOCATOR, buffer.cast(), layout)
         };
     }
