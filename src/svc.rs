@@ -149,7 +149,16 @@ pub fn exit_thread() -> ! {
 }
 
 /// Pause the current thread for the specified duration.
+///
+/// [`Timeout::none`] yields to other threads.
+/// [`Timeout::infinite`] sleeps for the longest representable finite duration instead.
+#[inline]
 pub fn sleep_thread(duration: Timeout) {
+    // According to [kernel-decomp], `SvcSleepThread` has no infinite timeout: the kernel ignores negative values, including -1.
+    // Wait for the closest finite timeout instead if the duration is [`Timeout::infinite()`].
+    //
+    // [kernel-decomp]: https://gist.github.com/TuxSH/f1f270710ed84576823fd1da348acb38/3dd82f31299c999ede0ea8f899aafefc974b7fb0#file-k11_latest_n3ds-cpp-L10588-L10597
+    let duration = duration.closest_finite_timeout();
     let (ns_high, ns_low) = (duration.reg_high(), duration.reg_low());
 
     unsafe {
@@ -493,52 +502,117 @@ pub fn stop_point() {
     }
 }
 
+/// A system call timeout.
+///
+/// A timeout represents either a finite number of nanoseconds ([`Self::from_nanoseconds`]),
+/// or an infinite duration, [`Self::infinite()`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Timeout(i64);
+pub struct Timeout {
+    /// The kernel encodes timeouts as *signed* 64-bit integers.
+    /// The only valid bit patterns are, however:
+    /// * a sentinel value encoding an infinite timeout (-1, [`Self::INFINITE`])
+    /// * non-negative numbers of nanoseconds.
+    ///
+    /// The constructors never produce other negative values.
+    /// Different syscalls interpret negative values besides -1 differently,
+    /// so it is best to forbid encoding them at all.
+    nanoseconds: i64,
+}
 
 impl Timeout {
-    pub const fn from_nanoseconds(nanoseconds: i64) -> Self {
-        Self(nanoseconds)
+    const INFINITE: i64 = -1;
+    /// Roughly ~292 years.
+    const MAX_FINITE_TIMEOUT: Self = Self {
+        nanoseconds: i64::MAX,
+    };
+
+    /// Create a timeout from a number of nanoseconds.
+    ///
+    /// Saturates to [`Self::infinite`] if the duration exceeds the largest representable finite timeout.
+    #[inline]
+    pub const fn from_nanoseconds(nanoseconds: u64) -> Self {
+        if nanoseconds > Self::MAX_FINITE_TIMEOUT.nanoseconds as u64 {
+            Self::infinite()
+        } else {
+            Self {
+                nanoseconds: nanoseconds as i64,
+            }
+        }
     }
 
-    pub const fn from_seconds(seconds: i64) -> Self {
-        Self(seconds * 1_000_000_000)
+    /// Create a *finite* timeout from a number of nanoseconds.
+    ///
+    /// Saturates to the largest representable finite timeout.
+    /// Use [`Self::infinite`] to represent an infinite duration.
+    #[inline]
+    pub const fn from_nanoseconds_finite(nanoseconds: u64) -> Self {
+        if nanoseconds > Self::MAX_FINITE_TIMEOUT.nanoseconds as u64 {
+            Self::MAX_FINITE_TIMEOUT
+        } else {
+            Self {
+                nanoseconds: nanoseconds as i64,
+            }
+        }
     }
 
+    pub const fn from_seconds(seconds: u64) -> Self {
+        Self::from_nanoseconds(seconds.saturating_mul(1_000_000_000))
+    }
+
+    /// A timeout representing an infinite duration.
     pub const fn infinite() -> Self {
-        Self::from_nanoseconds(i64::MAX)
+        Self {
+            nanoseconds: Self::INFINITE,
+        }
     }
 
     pub const fn none() -> Self {
-        Self::from_nanoseconds(0)
+        Self { nanoseconds: 0 }
     }
 
-    pub const fn as_nanoseconds(self) -> i64 {
-        self.0
+    /// The timeout in nanoseconds.
+    ///
+    /// If the timeout is [`Self::infinite()`], returns [`None`].
+    pub const fn as_nanoseconds(self) -> Option<u64> {
+        if self.nanoseconds == Self::INFINITE {
+            None
+        } else {
+            Some(self.nanoseconds as u64)
+        }
+    }
+
+    /// The closest *finite* timeout.
+    ///
+    /// If this timeout is finite, returns the value unchanged.
+    /// If the timeout is [`Self::infinite()`], returns the largest representable finite timeout instead.
+    pub const fn closest_finite_timeout(self) -> Self {
+        if self.nanoseconds == Self::INFINITE {
+            Self::MAX_FINITE_TIMEOUT
+        } else {
+            self
+        }
     }
 
     #[inline]
     pub(crate) const fn reg_high(self) -> u32 {
-        ((self.0 as u64) >> 32) as u32
+        ((self.nanoseconds as u64) >> 32) as u32
     }
 
     #[inline]
     pub(crate) const fn reg_low(self) -> u32 {
-        self.0 as u64 as u32
+        self.nanoseconds as u64 as u32
     }
 }
 
 impl From<Duration> for Timeout {
+    /// Saturates at the longest finite timeout; a `Duration` is never infinite.
     fn from(duration: Duration) -> Self {
-        match duration.as_nanos().try_into() {
-            Ok(ns) => Self::from_nanoseconds(ns),
-            Err(_) => Self::infinite(),
-        }
+        Self::from_nanoseconds_finite(duration.as_nanos().try_into().unwrap_or(u64::MAX))
     }
 }
 
-impl From<i64> for Timeout {
-    fn from(nanoseconds: i64) -> Self {
-        Self::from_nanoseconds(nanoseconds)
+impl From<u64> for Timeout {
+    fn from(nanoseconds: u64) -> Self {
+        Self::from_nanoseconds_finite(nanoseconds)
     }
 }

@@ -83,13 +83,8 @@ impl PollFd {
 
 /// Convert a timeout to whole milliseconds for `poll`, rounding up; -1 waits indefinitely.
 pub(super) fn timeout_to_ms(timeout: Timeout) -> i32 {
-    let ns = timeout.as_nanoseconds();
-    if ns < 0 || timeout == Timeout::infinite() {
-        return -1;
+    match timeout.as_nanoseconds() {
+        None => -1,
+        Some(ns) => ns.div_ceil(1_000_000).try_into().unwrap_or(i32::MAX),
     }
-
-    (ns as u64)
-        .div_ceil(1_000_000)
-        .try_into()
-        .unwrap_or(i32::MAX)
 }
