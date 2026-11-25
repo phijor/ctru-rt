@@ -13,6 +13,7 @@ use crate::{
     svc::{self, Timeout},
 };
 
+use core::ffi::CStr;
 use core::net::SocketAddr;
 use core::num::NonZeroU32;
 use core::ops::BitOr;
@@ -21,6 +22,7 @@ use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 mod address;
+mod addrinfo;
 mod error;
 mod poll;
 mod socket;
@@ -28,6 +30,7 @@ mod tcp;
 mod udp;
 
 use address::RawAddr;
+use addrinfo::{RawAddrInfo, RawHints};
 pub use error::{Result, SocketError, SocketErrorCode};
 use poll::{PollEvents, PollFd, timeout_to_ms};
 use socket::Socket;
@@ -237,6 +240,52 @@ impl Soc {
 
         let _ = ReturnValue::check(reply.read_result())?;
         Ok(())
+    }
+
+    /// Look up the addresses for `node` and `service` given `hints`.
+    ///
+    /// The results are written to the start of `info`.
+    /// Returns the total number of results, which may exceed `info.len()`.
+    /// In that case, all entries of `info` are filled and the remaining results are discarded.
+    /// The call may be retried with an `info` slice of the appropriate size.
+    ///
+    /// On failure, reports `EAI_*` [`SocketErrorCode`]s .
+    fn getaddrinfo(
+        &self,
+        node: Option<&CStr>,
+        service: Option<&CStr>,
+        hints: Option<&RawHints>,
+        info: &mut [RawAddrInfo],
+    ) -> Result<usize> {
+        fn cstr_bytes(s: Option<&CStr>) -> &[u8] {
+            match s {
+                Some(s) => s.to_bytes_with_nul(),
+                None => &[],
+            }
+        }
+
+        let mut reply = {
+            let node = cstr_bytes(node);
+            let service = cstr_bytes(service);
+
+            let hints = RawHints::as_bytes(hints);
+            let info = RawAddrInfo::as_bytes_mut(info);
+
+            IpcRequest::command(0xF)
+                .parameter(node.len())
+                .parameter(service.len())
+                .parameter(hints.len())
+                .parameter(info.len())
+                .translate_parameter(StaticBuffer::new(node, 5))
+                .translate_parameter(StaticBuffer::new(service, 6))
+                .translate_parameter(StaticBuffer::new(hints, 7))
+                .dispatch_with_receive_buffers(&self.handle, &mut [info])?
+        };
+
+        let _ = ReturnValue::check(reply.read_result())?;
+        let info_count = reply.read_word() as usize;
+
+        Ok(info_count)
     }
 
     /// Wait until one of the requested events occurs on any of `fds`, or until `timeout` passes.

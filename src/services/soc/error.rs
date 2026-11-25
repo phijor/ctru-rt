@@ -131,6 +131,12 @@ socket_error_codes! {
     ESTALE = 74,
     ETIME = 75,
     ETIMEDOUT = 76,
+
+    // Errors returned by `getaddrinfo`:
+    EAI_FAMILY = 303,
+    EAI_MEMORY = 304,
+    EAI_NONAME = 305,
+    EAI_SOCKTYPE = 307,
 }
 
 impl fmt::Debug for SocketErrorCode {
