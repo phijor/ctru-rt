@@ -4,7 +4,7 @@
 
 use crate::{result::Result, svc};
 
-use core::{fmt, marker::PhantomData, num::NonZeroU32};
+use core::{fmt, marker::PhantomData, num::NonZeroU32, time::Duration};
 
 pub mod cfgmem;
 pub mod mem;
@@ -195,6 +195,9 @@ impl<T: AsHandle> AsHandle for &mut T {
 pub struct SystemTick(u64);
 
 impl SystemTick {
+    const SYSCLOCK_SOC_HZ: u64 = 16_756_991;
+    const TICK_HZ: u64 = Self::SYSCLOCK_SOC_HZ * 16;
+
     pub fn new(ticks: u64) -> Self {
         Self(ticks)
     }
@@ -205,5 +208,13 @@ impl SystemTick {
 
     pub const fn count(&self) -> u64 {
         self.0
+    }
+
+    pub const fn to_duration(&self) -> Duration {
+        let count = self.count();
+        let secs = count / Self::TICK_HZ;
+        let frac = count % Self::TICK_HZ;
+        let nanos = (frac * 1_000_000_000) / Self::TICK_HZ;
+        Duration::new(secs, nanos as u32)
     }
 }
