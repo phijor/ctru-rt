@@ -246,7 +246,7 @@ unsafe impl RawMutex for OsMutex {
 
     fn lock(&self) {
         let handle = self.get();
-        svc::wait_synchronization(handle, Timeout::forever())
+        svc::wait_synchronization(handle, Timeout::infinite())
             .expect("Failed to lock mutex with infinite timeout")
     }
 

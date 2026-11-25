@@ -505,7 +505,7 @@ impl Timeout {
         Self(seconds * 1_000_000_000)
     }
 
-    pub const fn forever() -> Self {
+    pub const fn infinite() -> Self {
         Self::from_nanoseconds(i64::MAX)
     }
 
@@ -532,7 +532,7 @@ impl From<Duration> for Timeout {
     fn from(duration: Duration) -> Self {
         match duration.as_nanos().try_into() {
             Ok(ns) => Self::from_nanoseconds(ns),
-            Err(_) => Self::forever(),
+            Err(_) => Self::infinite(),
         }
     }
 }

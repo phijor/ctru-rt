@@ -330,7 +330,7 @@ impl InterruptInfo {
 
 impl Sharedmem {
     fn wait_event(&mut self) -> Result<InterruptEventSet> {
-        self.gpu_events.wait(Timeout::forever())?;
+        self.gpu_events.wait(Timeout::infinite())?;
 
         self.gpu_events.clear()?;
 

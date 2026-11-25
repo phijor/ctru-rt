@@ -129,6 +129,6 @@ fn main() -> ! {
     }
 
     loop {
-        svc::sleep_thread(Timeout::forever());
+        svc::sleep_thread(Timeout::infinite());
     }
 }

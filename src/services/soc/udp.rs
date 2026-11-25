@@ -51,7 +51,7 @@ impl UdpSocket<'_> {
     ///
     /// The timeout is rounded up to whole milliseconds.
     /// [`Timeout::none`] attempts to read immediately,
-    /// [`Timeout::forever`] waits indefinitely.
+    /// [`Timeout::infinite`] waits indefinitely.
     ///
     /// Returns [`SocketErr(ETIMEDOUT)`][SocketErrorCode::ETIMEDOUT] if no data arrived in time.
     /// Returns [`SocketErr(EAGAIN)`][SocketErrorCode::EAGAIN] if the socket was signaled ready but no data could be read.

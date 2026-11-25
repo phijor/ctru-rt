@@ -327,7 +327,7 @@ impl AptLock {
     }
 
     pub(crate) fn wait_for_parameter(&self, buffer: &mut [u8]) -> Result<Parameter> {
-        self.events.parameter.wait(Timeout::forever())?;
+        self.events.parameter.wait(Timeout::infinite())?;
         self.lock()?.receive_parameter(self.app_id, buffer)
     }
 

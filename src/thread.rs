@@ -166,7 +166,7 @@ where
 {
     pub fn join(self) -> Result<Option<T>> {
         let Self { handle, memory } = self;
-        svc::wait_synchronization(handle.as_handle(), Timeout::forever())?;
+        svc::wait_synchronization(handle.as_handle(), Timeout::infinite())?;
 
         // SAFETY: The thread using this memory exited.
         // We own the only pointer to the location of the return value.
