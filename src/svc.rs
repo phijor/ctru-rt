@@ -538,33 +538,15 @@ pub struct Timeout {
 
 impl Timeout {
     const INFINITE: i64 = -1;
-    /// Roughly ~292 years.
-    const MAX_FINITE_TIMEOUT: Self = Self {
-        nanoseconds: i64::MAX,
-    };
 
     /// Create a timeout from a number of nanoseconds.
     ///
-    /// Saturates to [`Self::infinite`] if the duration exceeds the largest representable finite timeout.
+    /// Saturates to [`Self::infinite`] if the duration exceeds the largest representable finite
+    /// timeout (`i64::MAX` nanoseconds, ~292 years).
     #[inline]
     pub const fn from_nanoseconds(nanoseconds: u64) -> Self {
-        if nanoseconds > Self::MAX_FINITE_TIMEOUT.nanoseconds as u64 {
+        if nanoseconds > i64::MAX as u64 {
             Self::infinite()
-        } else {
-            Self {
-                nanoseconds: nanoseconds as i64,
-            }
-        }
-    }
-
-    /// Create a *finite* timeout from a number of nanoseconds.
-    ///
-    /// Saturates to the largest representable finite timeout.
-    /// Use [`Self::infinite`] to represent an infinite duration.
-    #[inline]
-    pub const fn from_nanoseconds_finite(nanoseconds: u64) -> Self {
-        if nanoseconds > Self::MAX_FINITE_TIMEOUT.nanoseconds as u64 {
-            Self::MAX_FINITE_TIMEOUT
         } else {
             Self {
                 nanoseconds: nanoseconds as i64,
@@ -606,18 +588,6 @@ impl Timeout {
         }
     }
 
-    /// The closest *finite* timeout.
-    ///
-    /// If this timeout is finite, returns the value unchanged.
-    /// If the timeout is [`Self::infinite()`], returns the largest representable finite timeout instead.
-    pub const fn closest_finite_timeout(self) -> Self {
-        if self.nanoseconds == Self::INFINITE {
-            Self::MAX_FINITE_TIMEOUT
-        } else {
-            self
-        }
-    }
-
     #[inline]
     pub(crate) const fn reg_high(self) -> u32 {
         ((self.nanoseconds as u64) >> 32) as u32
@@ -630,14 +600,14 @@ impl Timeout {
 }
 
 impl From<Duration> for Timeout {
-    /// Saturates at the longest finite timeout; a `Duration` is never infinite.
+    /// Saturates to [`Timeout::infinite`], like [`Timeout::from_nanoseconds`].
     fn from(duration: Duration) -> Self {
-        Self::from_nanoseconds_finite(duration.as_nanos().try_into().unwrap_or(u64::MAX))
+        Self::from_nanoseconds(duration.as_nanos().try_into().unwrap_or(u64::MAX))
     }
 }
 
 impl From<u64> for Timeout {
     fn from(nanoseconds: u64) -> Self {
-        Self::from_nanoseconds_finite(nanoseconds)
+        Self::from_nanoseconds(nanoseconds)
     }
 }
