@@ -210,6 +210,20 @@ impl SystemTick {
         self.0
     }
 
+    /// The ticks elapsed between `earlier` and `later`.
+    ///
+    /// Returns zero if `earlier > later`.
+    pub const fn between(earlier: Self, later: Self) -> Self {
+        Self(later.0.saturating_sub(earlier.0))
+    }
+
+    /// The number of ticks from [`Self::now()`] until `later`.
+    ///
+    /// Returns zero if `later` is in the past.
+    pub fn until(later: Self) -> Self {
+        Self::between(Self::now(), later)
+    }
+
     /// The number of nanoseconds spanned by this tick count.
     ///
     /// Saturates at `u64::MAX` (~584 years).
