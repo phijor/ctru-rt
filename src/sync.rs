@@ -272,10 +272,7 @@ unsafe impl RawMutexTimed for OsMutex {
     }
 
     fn try_lock_until(&self, deadline: Self::Instant) -> bool {
-        let now = SystemTick::now();
-        let delta = deadline.count().saturating_sub(now.count());
-        let timeout = Timeout::from_nanoseconds(delta);
-        self.try_lock_for(timeout)
+        self.try_lock_for(Timeout::from_system_tick(SystemTick::until(deadline)))
     }
 }
 

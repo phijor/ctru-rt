@@ -7,7 +7,7 @@ use crate::os::mem::MemoryState;
 use crate::os::reslimit::LimitType;
 use crate::{
     os::{
-        BorrowedHandle, OwnedHandle, RawHandle,
+        BorrowedHandle, OwnedHandle, RawHandle, SystemTick,
         mem::{MemoryOperation, MemoryPermission, QueryResult},
     },
     result::Result,
@@ -557,6 +557,14 @@ impl Timeout {
 
     pub const fn from_seconds(seconds: u64) -> Self {
         Self::from_nanoseconds(seconds.saturating_mul(1_000_000_000))
+    }
+
+    /// Create a timeout lasting the given number of system ticks.
+    ///
+    /// Saturates to [`Self::infinite`], like [`Self::from_nanoseconds`].
+    #[inline]
+    pub const fn from_system_tick(ticks: SystemTick) -> Self {
+        Self::from_nanoseconds(ticks.as_nanoseconds())
     }
 
     /// A timeout representing an infinite duration.
