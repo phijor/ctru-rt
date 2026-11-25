@@ -210,6 +210,19 @@ impl SystemTick {
         self.0
     }
 
+    /// The number of nanoseconds spanned by this tick count.
+    ///
+    /// Saturates at `u64::MAX` (~584 years).
+    pub const fn as_nanoseconds(&self) -> u64 {
+        let count = self.count();
+        let secs = count / Self::TICK_HZ;
+        let frac = count % Self::TICK_HZ;
+        // `frac < TICK_HZ`, so `frac * 1_000_000_000` fits in a `u64`.
+        let subsec_nanos = (frac * 1_000_000_000) / Self::TICK_HZ;
+        secs.saturating_mul(1_000_000_000)
+            .saturating_add(subsec_nanos)
+    }
+
     pub const fn to_duration(&self) -> Duration {
         let count = self.count();
         let secs = count / Self::TICK_HZ;
