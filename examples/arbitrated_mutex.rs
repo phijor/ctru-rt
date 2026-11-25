@@ -20,6 +20,7 @@ use alloc::vec::Vec;
 use core::{
     panic::PanicInfo,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    time::Duration,
 };
 
 use ctru_rt::{
@@ -85,11 +86,11 @@ fn counter_test() -> Result<bool> {
 
                         // Read, give other threads a chance to run while holding the lock, write.
                         let value = *counter;
-                        svc::sleep_thread(Timeout::from_nanoseconds(100_000));
+                        svc::sleep_thread(Duration::from_micros(100));
                         *counter = value + 1;
 
                         drop(counter);
-                        svc::sleep_thread(Timeout::from_nanoseconds(50_000));
+                        svc::sleep_thread(Duration::from_micros(50));
                     }
 
                     info!("Counter worker {} (priority {}) done", id, priority);
@@ -132,7 +133,7 @@ fn priority_test() -> Result<bool> {
             let _ = locked_signal.signal();
 
             // Hold the lock long enough for the high-priority thread to start waiting on it.
-            svc::sleep_thread(Timeout::from_seconds(1));
+            svc::sleep_thread(Duration::from_secs(1));
 
             RELEASED.store(true, Ordering::Relaxed);
             info!("Priority test: low-priority thread releases the lock");

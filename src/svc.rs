@@ -148,21 +148,38 @@ pub fn exit_thread() -> ! {
     unsafe { svc!(0x09: () -> !) }
 }
 
-/// Pause the current thread for the specified duration.
+/// Pause the current thread for at least `duration`.
 ///
-/// [`Timeout::none`] yields to other threads.
-/// [`Timeout::infinite`] sleeps for the longest representable finite duration instead.
+/// Saturates at `i64::MAX` nanoseconds (~292 years).
+/// A zero duration yields to other threads, see [`yield_thread`].
+/// To sleep indefinitely, use [`sleep_thread_forever`].
 #[inline]
-pub fn sleep_thread(duration: Timeout) {
-    // According to [kernel-decomp], `SvcSleepThread` has no infinite timeout: the kernel ignores negative values, including -1.
-    // Wait for the closest finite timeout instead if the duration is [`Timeout::infinite()`].
+pub fn sleep_thread(duration: Duration) {
+    // This system call takes a single argument: a signed 64-bit integer of nanoseconds. According
+    // to [kernel-decomp], it sleeps for positive durations, yields for zero, and ignores negative
+    // values. Valid durations thus range from `0` to `i64::MAX` nanoseconds.
     //
     // [kernel-decomp]: https://gist.github.com/TuxSH/f1f270710ed84576823fd1da348acb38/3dd82f31299c999ede0ea8f899aafefc974b7fb0#file-k11_latest_n3ds-cpp-L10588-L10597
-    let duration = duration.closest_finite_timeout();
-    let (ns_high, ns_low) = (duration.reg_high(), duration.reg_low());
+    let ns = duration.as_nanos().min(i64::MAX as u128) as u64;
+    let (ns_low, ns_high) = (ns as u32, (ns >> 32) as u32);
 
     unsafe {
         let _ = svc!(0x0a: (ns_low, ns_high));
+    }
+}
+
+/// Give up the rest of the current thread's time slice to other threads.
+#[inline]
+pub fn yield_thread() {
+    sleep_thread(Duration::ZERO)
+}
+
+/// Pause the current thread indefinitely.
+pub fn sleep_thread_forever() -> ! {
+    // It is not possible to pass a truly infinite timeout to `sleep_thread`.
+    // Instead, sleep for the longest possible finite duration in a loop.
+    loop {
+        sleep_thread(Duration::MAX)
     }
 }
 

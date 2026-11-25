@@ -5,15 +5,9 @@
 #![no_std]
 #![no_main]
 
-use core::panic::PanicInfo;
+use core::{panic::PanicInfo, time::Duration};
 
-use ctru_rt::{
-    entry,
-    ports::srv::Srv,
-    result::Result,
-    services::hid::Hid,
-    svc::{self, Timeout},
-};
+use ctru_rt::{entry, ports::srv::Srv, result::Result, services::hid::Hid, svc};
 use log::{error, info};
 
 #[panic_handler]
@@ -29,7 +23,7 @@ fn run() -> Result<()> {
 
     info!("Press START to exit");
     while !hid.last_keypad().start() {
-        svc::sleep_thread(Timeout::from_nanoseconds(16_666_667));
+        svc::sleep_thread(Duration::from_nanos(16_666_667));
     }
 
     info!("Exiting...");

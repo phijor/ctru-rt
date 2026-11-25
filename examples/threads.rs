@@ -61,7 +61,7 @@ fn run() -> Result<()> {
                     // Slowly count to five
                     for i in 0..5 {
                         info!("\x1b[{}mThread {}\x1b[0m: Counting {}...", color, id, 5 - i);
-                        svc::sleep_thread(timeout.into());
+                        svc::sleep_thread(timeout);
                     }
 
                     // Signal the main thread that we're done here.

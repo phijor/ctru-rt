@@ -8,9 +8,7 @@
 
 extern crate alloc;
 
-use ctru_rt::svc::Timeout;
-
-use core::panic::PanicInfo;
+use core::{panic::PanicInfo, time::Duration};
 
 use ctru_rt::{debug::init_log, entry, result::Result, svc, sync::Mutex};
 
@@ -31,7 +29,7 @@ fn run() -> Result<()> {
         info!("Value: {}", val);
         *data = val;
 
-        svc::sleep_thread(Timeout::from_seconds(1));
+        svc::sleep_thread(Duration::from_secs(1));
     }
 }
 

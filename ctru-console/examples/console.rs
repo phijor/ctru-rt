@@ -7,7 +7,7 @@
 
 extern crate alloc;
 
-use core::panic::PanicInfo;
+use core::{panic::PanicInfo, time::Duration};
 use log::{LevelFilter, error, info};
 
 use ctru_console::Console;
@@ -21,7 +21,7 @@ use ctru_rt::{
         gsp::gpu::{Gpu, Screen},
         hid::{Hid, KeyPad},
     },
-    svc::{self, Timeout, sleep_thread},
+    svc::{self, sleep_thread},
 };
 
 #[panic_handler]
@@ -93,32 +93,32 @@ fn bottles() {
     loop {
         for i in (3..100).rev() {
             info!("{i} bottles of beer on the wall,");
-            sleep_thread(Timeout::from_seconds(1));
+            sleep_thread(Duration::from_secs(1));
             info!("{i} bottles of beer.");
-            sleep_thread(Timeout::from_seconds(1));
+            sleep_thread(Duration::from_secs(1));
             info!("Take one down and pass it around,");
-            sleep_thread(Timeout::from_seconds(1));
+            sleep_thread(Duration::from_secs(1));
             info!("now there's {} more bottles of beer on the wall!", i - 1);
-            sleep_thread(Timeout::from_seconds(1));
+            sleep_thread(Duration::from_secs(1));
         }
 
         info!("2 bottles of beer on the wall,");
-        sleep_thread(Timeout::from_seconds(1));
+        sleep_thread(Duration::from_secs(1));
         info!("2 bottles of beer.");
-        sleep_thread(Timeout::from_seconds(1));
+        sleep_thread(Duration::from_secs(1));
         info!("Take one down and pass it around,");
-        sleep_thread(Timeout::from_seconds(1));
+        sleep_thread(Duration::from_secs(1));
         info!("now there's 1 more bottle of beer on the wall!");
-        sleep_thread(Timeout::from_seconds(1));
+        sleep_thread(Duration::from_secs(1));
 
         info!("1 bottle of beer on the wall,");
-        sleep_thread(Timeout::from_seconds(1));
+        sleep_thread(Duration::from_secs(1));
         info!("1 bottle of beer.");
-        sleep_thread(Timeout::from_seconds(1));
+        sleep_thread(Duration::from_secs(1));
         info!("Take one down and pass it around,");
-        sleep_thread(Timeout::from_seconds(1));
+        sleep_thread(Duration::from_secs(1));
         info!("now there's no more bottles of beer on the wall!");
-        sleep_thread(Timeout::from_seconds(1));
+        sleep_thread(Duration::from_secs(1));
     }
 }
 
@@ -128,7 +128,5 @@ fn main() -> ! {
         error!("Failed to run console example: {:?}", e);
     }
 
-    loop {
-        svc::sleep_thread(Timeout::infinite());
-    }
+    svc::sleep_thread_forever()
 }

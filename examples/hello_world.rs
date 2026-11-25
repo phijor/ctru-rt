@@ -33,7 +33,7 @@ fn main() {
     let rc = ResultCode::from(0x2a07);
     info!("Some result code: {:?}", rc);
 
-    ctru_rt::svc::sleep_thread(Duration::from_secs(2).into());
+    ctru_rt::svc::sleep_thread(Duration::from_secs(2));
 
     info!("Bye-bye!");
 }
