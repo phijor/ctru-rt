@@ -1,0 +1,25 @@
+[package]
+name = "ntp"
+version = "0.1.0"
+authors = ["Philipp Joram <mail@phijor.me>"]
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+
+[dependencies]
+ctru-rt = { path = "../.." }
+ctru-console = { path = "../../ctru-console/" }
+
+[dependencies.sntpc]
+version = "0.11.0"
+features = [ "log", "sync" ]
+
+[dependencies.jiff]
+version = "1.0.3"
+default-features = false
+features = [ "alloc", "logging", "perf-inline" ]
+
+[[bin]]
+name = "ntp"
+test = false
+bench = false
