@@ -18,6 +18,7 @@ use core::net::SocketAddr;
 use core::num::NonZeroU32;
 use core::ops::BitOr;
 
+use alloc::{vec, vec::Vec};
 use log::debug;
 use num_enum::{FromPrimitive, IntoPrimitive};
 
@@ -286,6 +287,30 @@ impl Soc {
         let info_count = reply.read_word() as usize;
 
         Ok(info_count)
+    }
+
+    pub fn lookup(&self, host: &CStr, port: u16) -> Result<Vec<SocketAddr>> {
+        let parse_addr = |raw: &RawAddrInfo| -> Option<SocketAddr> {
+            let mut addr = raw.address().decode()?;
+            addr.set_port(port);
+            Some(addr)
+        };
+
+        let mut buf = vec![RawAddrInfo::zeroed(); 4];
+        let hints = RawHints::new(0, AddressFamily::INetV4, Type::Datagram, Protocol::Default);
+
+        let addresses: Vec<SocketAddr> = loop {
+            let info_count = self.getaddrinfo(Some(host), None, Some(&hints), &mut buf)?;
+
+            // If all addresses found by getaddrinfo fit the buffer,
+            // parse and return them. If not, grow the buffer and retry.
+            match buf.get(..info_count) {
+                Some(result) => break result.iter().filter_map(parse_addr).collect(),
+                None => buf.resize(info_count, RawAddrInfo::zeroed()),
+            };
+        };
+
+        Ok(addresses)
     }
 
     /// Wait until one of the requested events occurs on any of `fds`, or until `timeout` passes.

@@ -6,6 +6,7 @@ use super::AddressFamily;
 
 use core::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub(super) struct RawAddr {
     len: u8,
@@ -13,6 +14,7 @@ pub(super) struct RawAddr {
     inner: RawAddrInner,
 }
 
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 union RawAddrInner {
     unspec: RawAddrUnspec,
